@@ -60,7 +60,13 @@ export async function analyseEquipmentPhoto(uri: string, userId: string): Promis
 
   try {
     const { data, error } = await supabase.functions.invoke('analyze-equipment-photo', {
-      body: { photoPath },
+      body: {
+        photoPath,
+        // Exercise history is matched by name, so steering the suggestion onto
+        // a name we already track is what makes it continue an existing
+        // history rather than start an empty one.
+        knownExercises: COMMON_EXERCISES.map((exercise) => exercise.name),
+      },
     })
     if (error) throw error
     if (data?.error) throw new Error(String(data.error))
