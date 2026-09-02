@@ -11,7 +11,13 @@ interface AwardXPParams {
   overrideAmount?: number
 }
 
-export async function awardXP(params: AwardXPParams): Promise<number> {
+export interface AwardXPResult {
+  xpEarned: number
+  leveledUp: boolean
+  newLevel: number
+}
+
+export async function awardXP(params: AwardXPParams): Promise<AwardXPResult> {
   const { userId, circleId, actionType, referenceId, description, overrideAmount } = params
 
   let baseXP = overrideAmount ?? getBaseXP(actionType)
@@ -28,8 +34,11 @@ export async function awardXP(params: AwardXPParams): Promise<number> {
     baseXP = Math.round(baseXP * multiplier)
   }
 
-  // Insert XP event
-  await supabase.from('xp_events').insert({
+  // Insert XP event. The event row is the audit trail for the running totals
+  // below, so if it doesn't land we must not bump the profile — that would
+  // leave a total nothing accounts for. Report zero earned rather than
+  // claiming XP the user never actually got.
+  const { error: eventError } = await supabase.from('xp_events').insert({
     user_id: userId,
     circle_id: circleId,
     action_type: actionType,
@@ -37,19 +46,25 @@ export async function awardXP(params: AwardXPParams): Promise<number> {
     description: description ?? actionType,
     reference_id: referenceId ?? null,
   })
+  if (eventError) {
+    console.warn('[awardXP] xp_events insert failed:', eventError.message)
+    const { data: current } = await supabase.from('profiles').select('level').eq('id', userId).single()
+    return { xpEarned: 0, leveledUp: false, newLevel: current?.level ?? 1 }
+  }
 
   // Update profile totals
   const { data: profile } = await supabase
     .from('profiles')
-    .select('total_xp, weekly_xp')
+    .select('total_xp, weekly_xp, level')
     .eq('id', userId)
     .single()
 
   const newTotal = (profile?.total_xp ?? 0) + baseXP
   const newWeekly = (profile?.weekly_xp ?? 0) + baseXP
   const newLevel = getLevelFromXP(newTotal)
+  const leveledUp = newLevel > (profile?.level ?? 1)
 
-  await supabase
+  const { error: totalsError } = await supabase
     .from('profiles')
     .update({
       total_xp: newTotal,
@@ -58,8 +73,12 @@ export async function awardXP(params: AwardXPParams): Promise<number> {
       last_active_date: new Date().toISOString().split('T')[0],
     })
     .eq('id', userId)
+  if (totalsError) {
+    console.warn('[awardXP] profile totals update failed:', totalsError.message)
+    return { xpEarned: 0, leveledUp: false, newLevel: profile?.level ?? 1 }
+  }
 
-  return baseXP
+  return { xpEarned: baseXP, leveledUp, newLevel }
 }
 
 function getBaseXP(actionType: XPActionType): number {
@@ -67,6 +86,7 @@ function getBaseXP(actionType: XPActionType): number {
     workout: XP_VALUES.WORKOUT,
     meal: XP_VALUES.MEAL_LOG,
     steps: XP_VALUES.STEPS_LOGGED,
+    sleep: XP_VALUES.SLEEP,
     quest: XP_VALUES.QUEST_COMPLETE,
     chat: XP_VALUES.CHAT_MESSAGE,
     streak_bonus: XP_VALUES.STREAK_BONUS,

@@ -7,6 +7,11 @@ import { useCircleStore } from '../../../src/store/circleStore'
 import { useXP } from '../../../src/hooks/useXP'
 import { Button } from '../../../src/components/ui/Button'
 import { Input } from '../../../src/components/ui/Input'
+import { NoCircleBanner } from '../../../src/components/ui/NoCircleBanner'
+import { completeQuestByType } from '../../../src/lib/completeQuest'
+import { colors, type } from '../../../src/constants/theme'
+import { AnimatedScreen } from '../../../src/components/ui/AnimatedScreen'
+
 
 export default function ShareRecipeScreen() {
   const router = useRouter()
@@ -27,10 +32,7 @@ export default function ShareRecipeScreen() {
       Alert.alert('Missing fields', 'Title, ingredients, and instructions are required.')
       return
     }
-    if (!profile?.id || !circle?.id) {
-      Alert.alert('No circle', 'Join a circle first.')
-      return
-    }
+    if (!profile?.id || !circle?.id) return
     setLoading(true)
 
     const { data, error } = await supabase
@@ -55,13 +57,17 @@ export default function ShareRecipeScreen() {
     }
 
     await earn('recipe', data.id, title.trim())
+    await completeQuestByType('share', profile.id, circle.id, earn)
     setLoading(false)
-    Alert.alert('Recipe shared! 🍳', '+25 XP earned.', [{ text: 'Done', onPress: () => router.back() }])
+    // Alert.alert's button callbacks never fire on web, so navigating from
+    // inside one strands the user on a form they already saved. Go back directly.
+    router.back()
   }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Share a Recipe</Text>
+      {!circle && <NoCircleBanner />}
       <Input label="Recipe Title" value={title} onChangeText={setTitle} placeholder="e.g. High Protein Pasta" autoCapitalize="words" />
       <Input label="Ingredients" value={ingredients} onChangeText={setIngredients} placeholder="List ingredients here, one per line" multiline numberOfLines={4} />
       <Input label="Instructions" value={instructions} onChangeText={setInstructions} placeholder="Step-by-step instructions" multiline numberOfLines={6} />
@@ -70,15 +76,15 @@ export default function ShareRecipeScreen() {
         <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="decimal-pad" placeholder="g" style={styles.flex1} />
         <Input label="Est. Cost ($)" value={cost} onChangeText={setCost} keyboardType="decimal-pad" placeholder="0.00" style={styles.flex1} />
       </View>
-      <Button label="Share Recipe (+25 XP)" onPress={handleSave} loading={loading} />
+      <Button label="Share Recipe (+25 XP)" onPress={handleSave} loading={loading} celebrate />
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  container: { padding: 20, gap: 16, paddingBottom: 60 },
-  title: { color: '#F1F5F9', fontSize: 24, fontWeight: '800', marginBottom: 4 },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  container: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 20, gap: 16, paddingBottom: 96, paddingTop: 14 },
+  title: { color: colors.text, fontFamily: type.display, fontSize: 27, fontWeight: '900', letterSpacing: 0.2, marginBottom: 4, textTransform: 'uppercase' },
   row: { flexDirection: 'row', gap: 10 },
   flex1: { flex: 1 },
 })

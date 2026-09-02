@@ -44,3 +44,14 @@ GoogleService-Info.plist
 # generated native folders
 /ios
 /android
+
+# build artifacts (an APK is ~100 MB and is rebuilt by EAS, never read from here)
+*.apk
+*.aab
+
+# local dev server logs
+.expo-web*.log
+.expo-web*.err.log
+
+# transient agent worktrees
+.claude/worktrees/

@@ -1,5 +1,6 @@
 import React from 'react'
 import { TextInput, Text, View, StyleSheet, TextInputProps } from 'react-native'
+import { colors, radius, type } from '../../constants/theme'
 
 interface InputProps extends TextInputProps {
   label?: string
@@ -12,8 +13,8 @@ export function Input({ label, error, style, ...props }: InputProps) {
       {label && <Text style={styles.label}>{label}</Text>}
       <TextInput
         style={[styles.input, error && styles.inputError, style]}
-        placeholderTextColor="#64748B"
-        selectionColor="#6366F1"
+        placeholderTextColor={colors.textMuted}
+        selectionColor={colors.gold}
         {...props}
       />
       {error && <Text style={styles.error}>{error}</Text>}
@@ -23,17 +24,27 @@ export function Input({ label, error, style, ...props }: InputProps) {
 
 const styles = StyleSheet.create({
   container: { gap: 6 },
-  label: { color: '#94A3B8', fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
+  label: {
+    fontFamily: type.display,
+    color: colors.gold,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
   input: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.cardRaised,
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
+    borderBottomWidth: 2,
+    borderColor: colors.borderLight,
+    borderBottomColor: colors.steel,
+    borderRadius: radius.sm,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: '#F1F5F9',
+    color: colors.text,
+    fontFamily: type.body,
     fontSize: 16,
   },
-  inputError: { borderColor: '#EF4444' },
-  error: { color: '#EF4444', fontSize: 12 },
+  inputError: { borderColor: colors.danger },
+  error: { color: colors.danger, fontSize: 12 },
 })

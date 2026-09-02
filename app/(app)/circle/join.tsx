@@ -1,16 +1,92 @@
-import React, { useState } from 'react'
-import { View, Text, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native'
+import React, { useState, useEffect } from 'react'
+import { View, Text, StyleSheet, Alert, KeyboardAvoidingView, ScrollView, Platform, Share } from 'react-native'
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/store/authStore'
 import { useCircleStore } from '../../../src/store/circleStore'
 import { Button } from '../../../src/components/ui/Button'
 import { Input } from '../../../src/components/ui/Input'
+import { colors, radius, type } from '../../../src/constants/theme'
+
+function InviteFriendView({ circleId, circleName }: { circleId: string; circleName: string }) {
+  const { profile } = useAuthStore()
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadOrCreateCode() {
+      const { data: existing } = await supabase
+        .from('invite_codes')
+        .select('code')
+        .eq('circle_id', circleId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) {
+        setInviteCode(existing.code)
+        setLoading(false)
+        return
+      }
+
+      if (!profile?.id) {
+        setLoading(false)
+        return
+      }
+
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase()
+      const { data: created } = await supabase
+        .from('invite_codes')
+        .insert({ circle_id: circleId, code, created_by: profile.id, max_uses: 30, is_active: true })
+        .select('code')
+        .single()
+
+      setInviteCode(created?.code ?? code)
+      setLoading(false)
+    }
+    loadOrCreateCode()
+  }, [circleId])
+
+  async function handleShare() {
+    if (!inviteCode) return
+    try {
+      await Share.share({
+        message: `Join my Fit Buddies circle "${circleName}"! Use invite code ${inviteCode} to sign up.`,
+      })
+    } catch {
+      // Share sheet dismissed or unavailable — nothing to do.
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.hero}>
+        <Ionicons name="people" size={36} color={colors.primary} />
+      </View>
+      <Text style={styles.title}>Invite a Friend</Text>
+      <Text style={styles.subtitle}>Share this code so a friend can join "{circleName}."</Text>
+
+      <View style={styles.codeCard}>
+        <Text style={styles.codeLabel}>INVITE CODE</Text>
+        <Text style={styles.codeValue}>{loading ? '······' : inviteCode}</Text>
+      </View>
+
+      <Button label="Share Invite Code" onPress={handleShare} disabled={loading} />
+
+      <View style={styles.helperCard}>
+        <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
+        <Text style={styles.helperText}>Circles support up to 30 members. Anyone with this code can join.</Text>
+      </View>
+    </View>
+  )
+}
 
 export default function JoinCircleScreen() {
   const router = useRouter()
   const { profile } = useAuthStore()
-  const { fetchCircle } = useCircleStore()
+  const { circle, fetchCircle } = useCircleStore()
   const [code, setCode] = useState('')
   const [circleName, setCircleName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -104,9 +180,22 @@ export default function JoinCircleScreen() {
     router.replace('/(app)/circle')
   }
 
+  if (circle) {
+    return (
+      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+          <InviteFriendView circleId={circle.id} circleName={circle.name} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    )
+  }
+
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <Ionicons name="people" size={36} color={colors.primary} />
+        </View>
         <Text style={styles.title}>Join Your Circle</Text>
         <Text style={styles.subtitle}>This is a private app. You need an invite code to join a circle.</Text>
 
@@ -148,17 +237,45 @@ export default function JoinCircleScreen() {
             <Button label="Create Circle" onPress={handleCreate} loading={loading} />
           </View>
         )}
-      </View>
+
+        <View style={styles.helperCard}>
+          <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
+          <Text style={styles.helperText}>
+            {mode === 'join'
+              ? 'Ask a friend who already has a circle to share their invite code with you.'
+              : 'Circles support up to 30 members. You\'ll get a shareable invite code right after creating one.'}
+          </Text>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  container: { flex: 1, padding: 24, gap: 24, justifyContent: 'center' },
-  title: { color: '#F1F5F9', fontSize: 28, fontWeight: '800' },
-  subtitle: { color: '#64748B', fontSize: 15, lineHeight: 22 },
-  tabs: { flexDirection: 'row', gap: 12 },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  container: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 24, paddingTop: 14, paddingBottom: 96, gap: 20 },
+  hero: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: colors.primaryGlow, borderWidth: 1, borderColor: colors.primary + '40',
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 4,
+  },
+  title: { color: colors.text, fontFamily: type.display, fontSize: 32, fontWeight: '900', letterSpacing: 0.2, textAlign: 'center', textTransform: 'uppercase' },
+  subtitle: { color: colors.textMuted, fontSize: 15, lineHeight: 22, textAlign: 'center' },
+  tabs: { flexDirection: 'row', gap: 12, marginTop: 8 },
   tab: { flex: 1, paddingVertical: 10 },
   form: { gap: 16 },
+  codeCard: {
+    alignItems: 'center', gap: 6,
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.primary + '40',
+    paddingVertical: 20, marginVertical: 4,
+  },
+  codeLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
+  codeValue: { color: colors.primary, fontSize: 34, fontWeight: '900', letterSpacing: 4 },
+  helperCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: 16, marginTop: 4,
+  },
+  helperText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, flex: 1 },
 })

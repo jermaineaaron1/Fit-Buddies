@@ -8,7 +8,10 @@ interface XPState {
   totalXP: number
   level: number
   loading: boolean
+  levelUpPending: number | null
   fetchRecentEvents: (userId: string, circleId: string) => Promise<void>
+  triggerLevelUp: (newLevel: number) => void
+  clearLevelUp: () => void
 }
 
 export const useXPStore = create<XPState>((set) => ({
@@ -17,6 +20,7 @@ export const useXPStore = create<XPState>((set) => ({
   totalXP: 0,
   level: 1,
   loading: false,
+  levelUpPending: null,
 
   fetchRecentEvents: async (userId, circleId) => {
     set({ loading: true })
@@ -30,4 +34,7 @@ export const useXPStore = create<XPState>((set) => ({
 
     set({ recentEvents: data ?? [], loading: false })
   },
+
+  triggerLevelUp: (newLevel) => set({ levelUpPending: newLevel }),
+  clearLevelUp: () => set({ levelUpPending: null }),
 }))

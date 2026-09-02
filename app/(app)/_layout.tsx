@@ -1,69 +1,38 @@
+import { View } from 'react-native'
 import { Tabs } from 'expo-router'
-import { Text } from 'react-native'
-
-function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
-  return <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>
-}
+import { AppHeader } from '../../src/components/ui/AppHeader'
+import { BottomNavigation } from '../../src/components/ui/BottomNavigation'
+import { QuickLogSheet } from '../../src/components/layout/QuickLogSheet'
+import { LevelUpOverlay } from '../../src/components/ui/LevelUpOverlay'
+import { useCircle } from '../../src/hooks/useCircle'
+import { colors } from '../../src/constants/theme'
 
 export default function AppLayout() {
+  useCircle()
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: '#0F172A',
-          borderTopColor: '#1E293B',
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 64,
-        },
-        tabBarActiveTintColor: '#6366F1',
-        tabBarInactiveTintColor: '#475569',
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Quests',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="⚡" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="circle"
-        options={{
-          title: 'Circle',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="👥" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="log"
-        options={{
-          title: 'Log',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="➕" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="share"
-        options={{
-          title: 'Share',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🌿" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="motivate"
-        options={{
-          title: 'Motivate',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🔥" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} />,
-        }}
-      />
-    </Tabs>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* One header for both form factors: 54px identity bar on a phone,
+          64px full navigation from 900px up. */}
+      <AppHeader />
+      <Tabs
+        tabBar={(props) => <BottomNavigation {...props} />}
+        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.bg } }}
+      >
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="belt" />
+        <Tabs.Screen name="callouts" />
+        <Tabs.Screen name="circle" />
+        <Tabs.Screen name="share" />
+        <Tabs.Screen name="profile" />
+        <Tabs.Screen name="log" />
+        <Tabs.Screen name="motivate" options={{ href: null }} />
+        <Tabs.Screen name="discover" options={{ href: null }} />
+      </Tabs>
+      {/* Bottom sheet on phone, right-side panel on desktop. Lives here so the
+          bottom bar and the header can both open it. */}
+      <QuickLogSheet />
+      <LevelUpOverlay />
+    </View>
   )
 }

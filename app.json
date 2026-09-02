@@ -13,11 +13,11 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F172A"
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "backgroundColor": "#0B0908"
       },
-      "package": "com.fitbuddies.app",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.fitbuddies.app"
     },
     "web": {
       "bundler": "metro"
@@ -27,15 +27,30 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
-          "color": "#6366F1",
+          "icon": "./assets/icon.png",
+          "color": "#D6A445",
           "sounds": []
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Fit Buddies uses your photos so you can log a meal from a picture instead of typing it out.",
+          "cameraPermission": "Fit Buddies uses your camera so you can snap a meal and have its macros estimated."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0618803a-864b-419c-96a8-2a845af26a4d"
+      }
+    },
+    "owner": "fit-buddies"
   }
 }

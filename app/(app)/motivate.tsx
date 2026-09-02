@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react'
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native'
 import { useAuthStore } from '../../src/store/authStore'
 import { MOTIVATIONAL_MESSAGES } from '../../src/constants/quests'
+import { Ionicons } from '@expo/vector-icons'
 import { Card } from '../../src/components/ui/Card'
 import { Button } from '../../src/components/ui/Button'
+import { colors, type } from '../../src/constants/theme'
 
 export default function MotivateScreen() {
   const { profile } = useAuthStore()
@@ -28,7 +30,7 @@ export default function MotivateScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Motivational Corner 🔥</Text>
+      <Text style={styles.title}>Motivational Corner</Text>
 
       {/* Daily Message */}
       <Card style={styles.dailyCard}>
@@ -41,7 +43,7 @@ export default function MotivateScreen() {
         <Card style={styles.streakCard}>
           {profile.current_streak > 0 ? (
             <>
-              <Text style={styles.streakEmoji}>🔥</Text>
+              <Ionicons name="flame" size={36} color={colors.warning} />
               <Text style={styles.streakNumber}>{profile.current_streak} day streak</Text>
               <Text style={styles.streakSub}>
                 {profile.current_streak >= 7
@@ -51,13 +53,13 @@ export default function MotivateScreen() {
             </>
           ) : isComeback ? (
             <>
-              <Text style={styles.streakEmoji}>⚡</Text>
+              <Ionicons name="flash" size={36} color={colors.primary} />
               <Text style={styles.streakNumber}>Comeback mode</Text>
               <Text style={styles.streakSub}>Your best streak was {profile.longest_streak} days. Today is day 1 again.</Text>
             </>
           ) : (
             <>
-              <Text style={styles.streakEmoji}>💪</Text>
+              <Ionicons name="barbell-outline" size={36} color={colors.accent} />
               <Text style={styles.streakNumber}>Start your streak</Text>
               <Text style={styles.streakSub}>Log one action today to begin.</Text>
             </>
@@ -95,25 +97,24 @@ export default function MotivateScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  container: { padding: 20, gap: 20, paddingBottom: 60 },
-  title: { color: '#F1F5F9', fontSize: 28, fontWeight: '800' },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  container: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 20, gap: 20, paddingBottom: 96, paddingTop: 14 },
+  title: { color: colors.text, fontFamily: type.display, fontSize: 30, fontWeight: '900', letterSpacing: 0.2, textTransform: 'uppercase' },
   dailyCard: { gap: 10 },
-  dailyLabel: { color: '#64748B', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8 },
-  dailyMessage: { color: '#F1F5F9', fontSize: 20, fontWeight: '600', lineHeight: 30 },
+  dailyLabel: { color: colors.textMuted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8 },
+  dailyMessage: { color: colors.text, fontSize: 20, fontWeight: '600', lineHeight: 30 },
   streakCard: { alignItems: 'center', gap: 8 },
-  streakEmoji: { fontSize: 40 },
-  streakNumber: { color: '#F1F5F9', fontSize: 22, fontWeight: '800' },
-  streakSub: { color: '#64748B', fontSize: 14, textAlign: 'center' },
+  streakNumber: { color: colors.text, fontSize: 22, fontWeight: '800' },
+  streakSub: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
   hardDaySection: { gap: 12 },
-  hardDayLabel: { color: '#94A3B8', fontSize: 16, fontWeight: '600' },
+  hardDayLabel: { color: colors.textSecondary, fontSize: 16, fontWeight: '600' },
   hardDayCard: { gap: 12 },
-  hardDayMessage: { color: '#F1F5F9', fontSize: 18, fontWeight: '600', lineHeight: 28 },
+  hardDayMessage: { color: colors.text, fontSize: 18, fontWeight: '600', lineHeight: 28 },
   another: { alignSelf: 'flex-start' },
-  anotherText: { color: '#6366F1', fontSize: 14, fontWeight: '600' },
+  anotherText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   section: { gap: 12 },
-  sectionTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
+  sectionTitle: { color: colors.text, fontFamily: type.display, fontSize: 20, fontWeight: '700', textTransform: 'uppercase' },
   promptRow: { flexDirection: 'row', gap: 10 },
-  promptDot: { color: '#6366F1', fontSize: 20, lineHeight: 22 },
-  promptText: { color: '#94A3B8', fontSize: 15, lineHeight: 22, flex: 1 },
+  promptDot: { color: colors.primary, fontSize: 20, lineHeight: 22 },
+  promptText: { color: colors.textSecondary, fontSize: 15, lineHeight: 22, flex: 1 },
 })

@@ -9,6 +9,9 @@ import { XP_VALUES } from '../../../src/constants/xp'
 import { Button } from '../../../src/components/ui/Button'
 import { Input } from '../../../src/components/ui/Input'
 import { Card } from '../../../src/components/ui/Card'
+import { NoCircleBanner } from '../../../src/components/ui/NoCircleBanner'
+import { completeQuestByType } from '../../../src/lib/completeQuest'
+import { colors, type } from '../../../src/constants/theme'
 
 export default function LogStepsScreen() {
   const router = useRouter()
@@ -31,13 +34,20 @@ export default function LogStepsScreen() {
       Alert.alert('Missing steps', 'Enter your step count.')
       return
     }
-    if (!profile?.id || !circle?.id) {
-      Alert.alert('No circle', 'Join a circle to log steps.')
-      return
-    }
+    if (!profile?.id || !circle?.id) return
     setLoading(true)
 
     const today = new Date().toISOString().split('T')[0]
+
+    // This is an upsert on (user_id, log_date), so correcting today's count
+    // updates the existing row rather than adding one. XP is per-day, not
+    // per-save — without this check, re-logging would pay out again each time.
+    const { data: alreadyLogged } = await supabase
+      .from('step_logs')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('log_date', today)
+      .maybeSingle()
 
     const { data, error } = await supabase
       .from('step_logs')
@@ -62,18 +72,21 @@ export default function LogStepsScreen() {
       return
     }
 
-    await earn('steps', data?.id, `${stepCount.toLocaleString()} steps`)
+    if (!alreadyLogged) {
+      await earn('steps', data?.id, `${stepCount.toLocaleString()} steps`)
+      await completeQuestByType('steps', profile.id, circle.id, earn)
+    }
     setLoading(false)
 
-    const msg = goalHit
-      ? `Goal smashed! +${xpEarned} XP 🎯`
-      : `Steps logged! +${xpEarned} XP. Keep moving.`
-    Alert.alert('Steps logged!', msg, [{ text: 'Done', onPress: () => router.back() }])
+    // Alert.alert's button callbacks never fire on web, so navigating from
+    // inside one strands the user on a form they already saved. Go back directly.
+    router.back()
   }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Log Steps</Text>
+      {!circle && <NoCircleBanner />}
 
       <Card style={styles.progressCard}>
         <Text style={styles.progressLabel}>Today's Progress</Text>
@@ -82,7 +95,7 @@ export default function LogStepsScreen() {
         <View style={styles.track}>
           <View style={[styles.fill, { width: `${progress * 100}%` }, goalHit && styles.fillGoal]} />
         </View>
-        {goalHit && <Text style={styles.goalHitText}>🎯 Goal hit! +{XP_VALUES.STEPS_GOAL_HIT} XP</Text>}
+        {goalHit && <Text style={styles.goalHitText}>Goal hit! +{XP_VALUES.STEPS_GOAL_HIT} XP</Text>}
       </Card>
 
       <Input
@@ -104,22 +117,22 @@ export default function LogStepsScreen() {
         {goalHit ? `+${XP_VALUES.STEPS_GOAL_HIT} XP for hitting your goal` : `+${XP_VALUES.STEPS_LOGGED} XP for logging steps`}
       </Text>
 
-      <Button label={`Save Steps (+${xpEarned} XP)`} onPress={handleSave} loading={loading} />
+      <Button label={`Save Steps (+${xpEarned} XP)`} onPress={handleSave} loading={loading} celebrate />
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  container: { padding: 20, gap: 16, paddingBottom: 60 },
-  title: { color: '#F1F5F9', fontSize: 24, fontWeight: '800', marginBottom: 4 },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  container: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 20, gap: 16, paddingBottom: 96, paddingTop: 14 },
+  title: { color: colors.text, fontFamily: type.display, fontSize: 27, fontWeight: '900', letterSpacing: 0.2, marginBottom: 4, textTransform: 'uppercase' },
   progressCard: { alignItems: 'center', gap: 8 },
-  progressLabel: { color: '#64748B', fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.8 },
-  stepCount: { color: '#F1F5F9', fontSize: 48, fontWeight: '800' },
-  stepGoal: { color: '#64748B', fontSize: 14 },
-  track: { width: '100%', height: 8, backgroundColor: '#0F172A', borderRadius: 4, overflow: 'hidden', marginTop: 8 },
-  fill: { height: '100%', backgroundColor: '#6366F1', borderRadius: 4 },
-  fillGoal: { backgroundColor: '#10B981' },
-  goalHitText: { color: '#10B981', fontSize: 15, fontWeight: '700' },
-  xpNote: { color: '#6366F1', fontSize: 14, textAlign: 'center' },
+  progressLabel: { color: colors.textMuted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.8 },
+  stepCount: { color: colors.text, fontSize: 48, fontWeight: '800' },
+  stepGoal: { color: colors.textMuted, fontSize: 14 },
+  track: { width: '100%', height: 8, backgroundColor: colors.bg, borderRadius: 4, overflow: 'hidden', marginTop: 8 },
+  fill: { height: '100%', backgroundColor: colors.primary, borderRadius: 4 },
+  fillGoal: { backgroundColor: colors.accent },
+  goalHitText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
+  xpNote: { color: colors.primary, fontSize: 14, textAlign: 'center' },
 })

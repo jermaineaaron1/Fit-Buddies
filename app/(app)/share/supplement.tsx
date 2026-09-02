@@ -7,6 +7,9 @@ import { useCircleStore } from '../../../src/store/circleStore'
 import { useXP } from '../../../src/hooks/useXP'
 import { Button } from '../../../src/components/ui/Button'
 import { Input } from '../../../src/components/ui/Input'
+import { NoCircleBanner } from '../../../src/components/ui/NoCircleBanner'
+import { completeQuestByType } from '../../../src/lib/completeQuest'
+import { colors, combatChip, type } from '../../../src/constants/theme'
 
 const CATEGORIES = ['protein', 'creatine', 'vitamin', 'preworkout', 'other'] as const
 
@@ -27,10 +30,7 @@ export default function ShareSupplementScreen() {
       Alert.alert('Missing name', 'Enter the supplement name.')
       return
     }
-    if (!profile?.id || !circle?.id) {
-      Alert.alert('No circle', 'Join a circle first.')
-      return
-    }
+    if (!profile?.id || !circle?.id) return
     setLoading(true)
 
     const { data, error } = await supabase
@@ -53,13 +53,17 @@ export default function ShareSupplementScreen() {
     }
 
     await earn('supplement_post', data.id, name.trim())
+    await completeQuestByType('share', profile.id, circle.id, earn)
     setLoading(false)
-    Alert.alert('Posted! 💊', '+10 XP earned.', [{ text: 'Done', onPress: () => router.back() }])
+    // Alert.alert's button callbacks never fire on web, so navigating from
+    // inside one strands the user on a form they already saved. Go back directly.
+    router.back()
   }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Share a Supplement</Text>
+      {!circle && <NoCircleBanner />}
       <Input label="Supplement Name" value={name} onChangeText={setName} placeholder="e.g. Creatine Monohydrate" autoCapitalize="words" />
 
       <View>
@@ -81,19 +85,19 @@ export default function ShareSupplementScreen() {
 
       <Input label="Price (optional)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" placeholder="0.00" />
       <Input label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="Brand, dosage, where to buy..." multiline />
-      <Button label="Post Supplement (+10 XP)" onPress={handleSave} loading={loading} />
+      <Button label="Post Supplement (+10 XP)" onPress={handleSave} loading={loading} celebrate />
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  container: { padding: 20, gap: 16, paddingBottom: 60 },
-  title: { color: '#F1F5F9', fontSize: 24, fontWeight: '800', marginBottom: 4 },
-  label: { color: '#94A3B8', fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  container: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 20, gap: 16, paddingBottom: 96, paddingTop: 14 },
+  title: { color: colors.text, fontFamily: type.display, fontSize: 27, fontWeight: '900', letterSpacing: 0.2, marginBottom: 4, textTransform: 'uppercase' },
+  label: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155' },
-  chipActive: { backgroundColor: '#6366F1', borderColor: '#6366F1' },
-  chipText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-  chipTextActive: { color: '#fff' },
+  chip: combatChip.base,
+  chipActive: { ...combatChip.active, backgroundColor: colors.primary },
+  chipText: { ...combatChip.text, fontSize: 14 },
+  chipTextActive: combatChip.textActive,
 })

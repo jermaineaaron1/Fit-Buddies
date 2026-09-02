@@ -1,19 +1,42 @@
-import React, { useState } from 'react'
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native'
-import { useRouter } from 'expo-router'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { View, Text, StyleSheet } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/store/authStore'
 import { useCircleStore } from '../../../src/store/circleStore'
 import { useXP } from '../../../src/hooks/useXP'
-import { Button } from '../../../src/components/ui/Button'
-import { Input } from '../../../src/components/ui/Input'
-import { Card } from '../../../src/components/ui/Card'
-import type { WorkoutExercise } from '../../../src/types/app'
-
-type ExerciseDraft = Omit<WorkoutExercise, 'id' | 'workout_id'>
+import { useBreakpoint } from '../../../src/hooks/useBreakpoint'
+import { PageContainer } from '../../../src/components/layout/PageContainer'
+import { AnimatedScreen } from '../../../src/components/ui/AnimatedScreen'
+import { CompactCard } from '../../../src/components/ui/CompactCard'
+import { CompactButton } from '../../../src/components/ui/CompactButton'
+import { IconButton } from '../../../src/components/ui/IconButton'
+import { SectionHeader } from '../../../src/components/ui/SectionHeader'
+import { NumericInput } from '../../../src/components/ui/NumericInput'
+import { TextField } from '../../../src/components/ui/TextField'
+import { Chip } from '../../../src/components/ui/Chip'
+import { NoCircleBanner } from '../../../src/components/ui/NoCircleBanner'
+import { AnimatedPressable } from '../../../src/components/ui/AnimatedPressable'
+import { ExercisePickerModal } from '../../../src/components/pickers/ExercisePickerModal'
+import { ExerciseLogCard } from '../../../src/components/workout/ExerciseLogCard'
+import { EquipmentScanner, type ConfirmedEquipment } from '../../../src/components/workout/EquipmentScanner'
+import { RecurringSchedulePicker } from '../../../src/components/workout/RecurringSchedulePicker'
+import { completeQuestByType } from '../../../src/lib/completeQuest'
+import { newExerciseDraft, draftFromWorkout, saveWorkout, type ExerciseDraft } from '../../../src/lib/workoutDraft'
+import { emptySet, type SetDraft } from '../../../src/lib/measurementSchemas'
+import { colors, radius, type } from '../../../src/constants/theme'
+import type { WorkoutWithExercises } from '../../../src/types/app'
+import type { MeasurementType } from '../../../src/types/database'
+import type { PickedExercise } from '../../../src/lib/wger'
 
 export default function LogWorkoutScreen() {
   const router = useRouter()
+  const params = useLocalSearchParams<{
+    repeat?: string; order?: string; focus?: string
+    exercise?: string; equipment?: string; measurement?: string; equipmentPhoto?: string
+  }>()
+  const { isDesktop } = useBreakpoint()
   const { profile } = useAuthStore()
   const { circle } = useCircleStore()
   const { earn } = useXP()
@@ -21,136 +44,370 @@ export default function LogWorkoutScreen() {
   const [title, setTitle] = useState('')
   const [notes, setNotes] = useState('')
   const [difficulty, setDifficulty] = useState(3)
+  const [durationMinutes, setDurationMinutes] = useState('')
   const [exercises, setExercises] = useState<ExerciseDraft[]>([
-    { exercise_name: '', sets: null, reps: null, weight_kg: null, notes: null, sort_order: 0 },
+    newExerciseDraft(params.focus === 'cardio' ? 'distance_cardio' : 'strength'),
   ])
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [makeRecurring, setMakeRecurring] = useState(false)
+  const [recurringFor, setRecurringFor] = useState<{ workoutId: string; title: string } | null>(null)
+  const [recentNames, setRecentNames] = useState<string[]>([])
+  /** Guards the one-shot prefill so re-renders never clobber edits in progress. */
+  const [prefilled, setPrefilled] = useState(false)
 
-  function updateExercise(index: number, field: keyof ExerciseDraft, value: string) {
-    setExercises((prev) => {
-      const updated = [...prev]
-      if (field === 'exercise_name' || field === 'notes') {
-        updated[index] = { ...updated[index], [field]: value }
-      } else {
-        updated[index] = { ...updated[index], [field]: value ? parseFloat(value) : null }
+  const loadRecentNames = useCallback(async () => {
+    if (!profile?.id) return
+    const { data } = await supabase
+      .from('workouts')
+      .select('exercises:workout_exercises(exercise_name, sort_order)')
+      .eq('user_id', profile.id).order('logged_at', { ascending: false }).limit(12)
+
+    const seen = new Set<string>()
+    const names: string[] = []
+    for (const workout of (data as any[]) ?? []) {
+      for (const exercise of workout.exercises ?? []) {
+        const key = (exercise.exercise_name ?? '').trim().toLowerCase()
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        names.push(exercise.exercise_name.trim())
       }
-      return updated
-    })
-  }
+    }
+    setRecentNames(names)
+  }, [profile?.id])
 
-  function addExercise() {
-    setExercises((prev) => [
-      ...prev,
-      { exercise_name: '', sets: null, reps: null, weight_kg: null, notes: null, sort_order: prev.length },
-    ])
+  useFocusEffect(useCallback(() => { loadRecentNames() }, [loadRecentNames]))
+
+  // Prefill from Quick Log, Training's Start Workout, or the equipment scanner.
+  // Runs exactly once — a repeat of this while the form is dirty would discard
+  // whatever had been typed.
+  useEffect(() => {
+    if (prefilled || !profile?.id) return
+
+    if (params.exercise) {
+      setPrefilled(true)
+      const measurement = (params.measurement as MeasurementType | undefined) ?? 'strength'
+      setExercises([{
+        ...newExerciseDraft(measurement),
+        exercise_name: String(params.exercise),
+        equipment: params.equipment ? String(params.equipment) : null,
+        equipment_photo_path: params.equipmentPhoto ? String(params.equipmentPhoto) : null,
+      }])
+      return
+    }
+
+    if (!params.repeat) return
+    setPrefilled(true)
+    let cancelled = false
+
+    ;(async () => {
+      const { data } = await supabase
+        .from('workouts').select('*, exercises:workout_exercises(*)')
+        .eq('id', String(params.repeat)).single()
+      if (cancelled || !data) return
+
+      const workout = data as unknown as WorkoutWithExercises
+      const exerciseIds = workout.exercises.map((exercise) => exercise.id)
+      // Per-set detail from the source session, so a repeat starts from the
+      // real numbers rather than from a reconstruction of the rollups.
+      const bySource: Record<string, SetDraft[]> = {}
+      if (exerciseIds.length) {
+        const { data: setRows } = await supabase
+          .from('workout_sets').select('*').in('workout_exercise_id', exerciseIds)
+          .order('set_index', { ascending: true })
+        for (const row of (setRows as any[]) ?? []) {
+          const { id, workout_exercise_id, created_at, ...rest } = row
+          ;(bySource[workout_exercise_id] ??= []).push(rest as SetDraft)
+        }
+      }
+
+      if (cancelled) return
+      let drafts = draftFromWorkout(workout, bySource)
+
+      // Training's sequence reordering travels as an index list.
+      if (params.order) {
+        const indices = String(params.order).split(',').map(Number).filter((value) => Number.isInteger(value))
+        const reordered = indices.map((index) => drafts[index]).filter(Boolean)
+        if (reordered.length === drafts.length) drafts = reordered
+      }
+
+      setTitle(workout.title)
+      setNotes(workout.notes ?? '')
+      setDifficulty(workout.difficulty ?? 3)
+      setDurationMinutes(workout.duration_minutes?.toString() ?? '')
+      setExercises(drafts.length ? drafts : [newExerciseDraft()])
+    })()
+
+    return () => { cancelled = true }
+  }, [params.repeat, params.exercise, params.order, params.equipment, params.measurement, params.equipmentPhoto, profile?.id, prefilled])
+
+  function patchExercise(index: number, patch: Partial<ExerciseDraft>) {
+    setExercises((current) => current.map((exercise, i) => i === index ? { ...exercise, ...patch } : exercise))
   }
 
   function removeExercise(index: number) {
-    setExercises((prev) => prev.filter((_, i) => i !== index))
+    setExercises((current) => {
+      const next = current.filter((_, i) => i !== index)
+      return next.length ? next : [newExerciseDraft()]
+    })
   }
+
+  function moveExercise(index: number, direction: -1 | 1) {
+    setExercises((current) => {
+      const to = index + direction
+      if (to < 0 || to >= current.length) return current
+      const next = [...current]
+      ;[next[index], next[to]] = [next[to], next[index]]
+      return next
+    })
+  }
+
+  function handlePickExercise(picked: PickedExercise) {
+    if (pickerIndex === null) return
+    patchExercise(pickerIndex, {
+      exercise_name: picked.name,
+      wger_exercise_id: picked.exerciseId,
+      exercise_image_url: picked.imageUrl,
+    })
+    setPickerIndex(null)
+  }
+
+  function handleScanned(equipment: ConfirmedEquipment) {
+    setExercises((current) => [...current, {
+      ...newExerciseDraft(equipment.measurementType),
+      exercise_name: equipment.exerciseName,
+      equipment: equipment.equipment,
+      equipment_photo_path: equipment.photoPath,
+    }])
+  }
+
+  const totalSets = useMemo(
+    () => exercises.reduce((sum, exercise) => sum + exercise.setRows.filter((set) => set.completed).length, 0),
+    [exercises],
+  )
 
   async function handleSave() {
-    if (!title.trim()) {
-      Alert.alert('Missing title', 'Give your workout a name.')
-      return
-    }
-    if (!profile?.id || !circle?.id) {
-      Alert.alert('No circle', 'Join a circle to log workouts.')
-      return
-    }
-    setLoading(true)
+    setSaveError(null)
+    if (!title.trim()) { setSaveError('Give your workout a name.'); return }
+    if (!profile?.id || !circle?.id) { setSaveError('You need to be in a circle to log a workout.'); return }
 
-    const { data: workout, error } = await supabase
-      .from('workouts')
-      .insert({
-        user_id: profile.id,
-        circle_id: circle.id,
-        title: title.trim(),
-        notes: notes.trim() || null,
-        difficulty,
-        xp_earned: 50,
-      })
-      .select()
-      .single()
+    setSaving(true)
+    const result = await saveWorkout({
+      userId: profile.id,
+      circleId: circle.id,
+      title: title.trim(),
+      notes: notes.trim() || null,
+      difficulty,
+      durationMinutes: durationMinutes ? Number(durationMinutes) : null,
+      exercises,
+    })
 
-    if (error || !workout) {
-      setLoading(false)
-      Alert.alert('Error', error?.message ?? 'Could not save workout.')
+    if (result.error || !result.workoutId) {
+      setSaving(false)
+      setSaveError(result.error ?? 'Could not save workout.')
       return
     }
 
-    // Save exercises
-    const validExercises = exercises.filter((e) => e.exercise_name.trim())
-    if (validExercises.length > 0) {
-      await supabase.from('workout_exercises').insert(
-        validExercises.map((e, i) => ({ ...e, workout_id: workout.id, sort_order: i }))
-      )
-    }
+    await earn('workout', result.workoutId, title.trim())
+    await completeQuestByType('workout', profile.id, circle.id, earn)
+    setSaving(false)
 
-    await earn('workout', workout.id, title.trim())
-    setLoading(false)
-    Alert.alert('Workout logged! 💪', '+50 XP earned.', [{ text: 'Done', onPress: () => router.back() }])
+    // Alert.alert's button callbacks never fire on web, so navigation must not
+    // be nested inside one — go back directly.
+    if (makeRecurring) setRecurringFor({ workoutId: result.workoutId, title: title.trim() })
+    else router.back()
   }
 
-  return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Log Workout</Text>
+  async function handleSaveRecurring({ title: planTitle, daysOfWeek }: { title: string; daysOfWeek: number[] }) {
+    if (!profile?.id || !circle?.id || !recurringFor) return
+    const { error } = await supabase.from('workout_plans').insert({
+      user_id: profile.id, circle_id: circle.id, title: planTitle,
+      source_workout_id: recurringFor.workoutId, days_of_week: daysOfWeek,
+    })
+    if (error) { setSaveError(`Schedule not saved: ${error.message}`); setRecurringFor(null); return }
+    setRecurringFor(null)
+    router.back()
+  }
 
-      <Input label="Workout Title" value={title} onChangeText={setTitle} placeholder="e.g. Push Day, Morning Run" />
-      <Input label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="How did it feel?" multiline />
+  const details = (
+    <AnimatedScreen>
+      <CompactCard accent="gold" style={styles.detailsCard}>
+        <TextField
+          label="Workout title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder="e.g. Push Day, Morning Run"
+          error={saveError && !title.trim() ? 'Give your workout a name.' : undefined}
+        />
 
-      <View style={styles.difficultyRow}>
-        <Text style={styles.label}>Difficulty</Text>
-        <View style={styles.stars}>
-          {[1, 2, 3, 4, 5].map((d) => (
-            <TouchableOpacity key={d} onPress={() => setDifficulty(d)}>
-              <Text style={[styles.star, d <= difficulty && styles.starActive]}>★</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.inlineFields}>
+          <NumericInput
+            label="Duration"
+            value={durationMinutes}
+            onChangeText={setDurationMinutes}
+            placeholder="45"
+            suffix="min"
+            integer
+            style={styles.durationField}
+          />
+          <View style={styles.effortField}>
+            <Text style={styles.fieldLabel}>Effort</Text>
+            <View style={styles.flames}>
+              {[1, 2, 3, 4, 5].map((level) => (
+                <AnimatedPressable
+                  key={level}
+                  onPress={() => setDifficulty(level)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: level === difficulty }}
+                  accessibilityLabel={`Effort ${level} of 5`}
+                  hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+                >
+                  <Ionicons
+                    name={level <= difficulty ? 'flame' : 'flame-outline'}
+                    size={22}
+                    color={level <= difficulty ? colors.primary : colors.textMuted}
+                  />
+                </AnimatedPressable>
+              ))}
+            </View>
+          </View>
         </View>
-      </View>
 
-      <Text style={styles.sectionTitle}>Exercises</Text>
+        <TextField
+          label="Session notes"
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="How did it feel?"
+          multiline
+        />
+      </CompactCard>
+    </AnimatedScreen>
+  )
 
-      {exercises.map((ex, i) => (
-        <Card key={i} style={styles.exerciseCard}>
-          <View style={styles.exerciseHeader}>
-            <Text style={styles.exerciseNumber}>Exercise {i + 1}</Text>
-            {exercises.length > 1 && (
-              <TouchableOpacity onPress={() => removeExercise(i)}>
-                <Text style={styles.removeText}>Remove</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <Input placeholder="Exercise name" value={ex.exercise_name} onChangeText={(v) => updateExercise(i, 'exercise_name', v)} />
-          <View style={styles.row}>
-            <Input label="Sets" placeholder="3" value={ex.sets?.toString() ?? ''} onChangeText={(v) => updateExercise(i, 'sets', v)} keyboardType="numeric" style={styles.flex1} />
-            <Input label="Reps" placeholder="10" value={ex.reps?.toString() ?? ''} onChangeText={(v) => updateExercise(i, 'reps', v)} keyboardType="numeric" style={styles.flex1} />
-            <Input label="kg" placeholder="0" value={ex.weight_kg?.toString() ?? ''} onChangeText={(v) => updateExercise(i, 'weight_kg', v)} keyboardType="decimal-pad" style={styles.flex1} />
-          </View>
-        </Card>
+  const list = (
+    <View style={styles.section}>
+      <SectionHeader title="Exercises" meta={`${exercises.length} · ${totalSets} sets done`}>
+        <Chip label="Scan" tone="gold" icon="camera" onPress={() => setScannerOpen(true)} />
+      </SectionHeader>
+
+      {exercises.map((exercise, index) => (
+        <AnimatedScreen key={exercise.key} delay={Math.min(index * 40, 160)}>
+          <ExerciseLogCard
+            exercise={exercise}
+            index={index}
+            total={exercises.length}
+            userId={profile?.id ?? null}
+            recentNames={recentNames}
+            onChange={(patch) => patchExercise(index, patch)}
+            onRemove={() => removeExercise(index)}
+            onMove={(direction) => moveExercise(index, direction)}
+            onOpenLibrary={() => setPickerIndex(index)}
+          />
+        </AnimatedScreen>
       ))}
 
-      <Button label="+ Add Exercise" onPress={addExercise} variant="secondary" />
-      <Button label="Save Workout (+50 XP)" onPress={handleSave} loading={loading} />
-    </ScrollView>
+      <View style={styles.addRow}>
+        <CompactButton label="Add exercise" icon="add" onPress={() => setExercises((current) => [...current, newExerciseDraft()])} />
+        <CompactButton label="Scan equipment" icon="camera-outline" onPress={() => setScannerOpen(true)} />
+      </View>
+    </View>
   )
+
+  const footer = (
+    <View style={styles.footer}>
+      <AnimatedPressable
+        style={styles.recurringRow}
+        onPress={() => setMakeRecurring((value) => !value)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: makeRecurring }}
+        accessibilityLabel="Also make this recurring"
+      >
+        <Ionicons name={makeRecurring ? 'checkbox' : 'square-outline'} size={18} color={makeRecurring ? colors.gold : colors.textMuted} />
+        <Text style={styles.recurringText}>Also make this recurring</Text>
+      </AnimatedPressable>
+
+      {saveError ? (
+        <View style={styles.error} accessibilityRole="alert">
+          <Ionicons name="alert-circle" size={14} color={colors.danger} />
+          <Text style={styles.errorText}>{saveError}</Text>
+        </View>
+      ) : null}
+
+      <CompactButton
+        label="Save workout · 50 XP"
+        tone="primary"
+        icon="checkmark"
+        block
+        loading={saving}
+        onPress={handleSave}
+      />
+    </View>
+  )
+
+  return <>
+    <PageContainer width={isDesktop ? 'content' : 'form'}>
+      <View style={styles.pageHead}>
+        <IconButton icon="arrow-back" onPress={() => router.back()} accessibilityLabel="Go back" />
+        <Text style={styles.pageTitle}>Workout</Text>
+        <Chip label="+50 XP" tone="gold" icon="flash" />
+      </View>
+
+      {!circle && <NoCircleBanner />}
+
+      {isDesktop ? (
+        <View style={styles.columns}>
+          <View style={styles.main}>{list}</View>
+          <View style={styles.side}>{details}{footer}</View>
+        </View>
+      ) : (
+        <>{details}{list}{footer}</>
+      )}
+    </PageContainer>
+
+    <ExercisePickerModal
+      visible={pickerIndex !== null}
+      onClose={() => setPickerIndex(null)}
+      onSelect={handlePickExercise}
+    />
+    {profile?.id && (
+      <EquipmentScanner
+        visible={scannerOpen}
+        userId={profile.id}
+        onClose={() => setScannerOpen(false)}
+        onConfirm={handleScanned}
+      />
+    )}
+    <RecurringSchedulePicker
+      visible={recurringFor !== null}
+      onClose={() => { setRecurringFor(null); router.back() }}
+      onSave={handleSaveRecurring}
+      initialTitle={recurringFor?.title ?? ''}
+    />
+  </>
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  container: { padding: 20, gap: 16, paddingBottom: 60 },
-  title: { color: '#F1F5F9', fontSize: 24, fontWeight: '800', marginBottom: 4 },
-  label: { color: '#94A3B8', fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
-  difficultyRow: { gap: 8 },
-  stars: { flexDirection: 'row', gap: 8 },
-  star: { fontSize: 28, color: '#334155' },
-  starActive: { color: '#F59E0B' },
-  sectionTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700', marginTop: 8 },
-  exerciseCard: { gap: 12 },
-  exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  exerciseNumber: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-  removeText: { color: '#EF4444', fontSize: 13 },
-  row: { flexDirection: 'row', gap: 10 },
-  flex1: { flex: 1 },
+  pageHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pageTitle: { flex: 1, color: colors.text, fontFamily: type.display, fontSize: 17, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+  section: { gap: 10 },
+  detailsCard: { gap: 11 },
+  fieldLabel: { color: colors.textMuted, fontFamily: type.display, fontSize: 9.5, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.9 },
+  inlineFields: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  durationField: { width: 120 },
+  effortField: { flex: 1, gap: 5 },
+  flames: { flexDirection: 'row', gap: 8, minHeight: 40, alignItems: 'center' },
+  addRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  footer: { gap: 10 },
+  recurringRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 34 },
+  recurringText: { flex: 1, color: colors.textSecondary, fontSize: 12.5 },
+  error: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, padding: 9,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.crimsonGlow,
+  },
+  errorText: { flex: 1, color: colors.text, fontSize: 11.5 },
+  columns: { flexDirection: 'row', gap: 20, alignItems: 'flex-start' },
+  main: { flex: 2, gap: 20, minWidth: 0 },
+  side: { flex: 1, gap: 12, minWidth: 280, maxWidth: 380 },
 })

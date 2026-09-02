@@ -1,14 +1,28 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import type { ChatMessageWithSender } from '../types/app'
+import type { Database } from '../types/database'
 
-export function useChat(circleId: string | null) {
+export type ChatScope = { circleId: string } | { calloutId: string }
+
+function scopeColumn(scope: ChatScope): 'circle_id' | 'callout_id' {
+  return 'circleId' in scope ? 'circle_id' : 'callout_id'
+}
+
+function scopeValue(scope: ChatScope): string {
+  return 'circleId' in scope ? scope.circleId : scope.calloutId
+}
+
+export function useChat(scope: ChatScope | null) {
   const [messages, setMessages] = useState<ChatMessageWithSender[]>([])
   const [loading, setLoading] = useState(true)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
+  const column = scope ? scopeColumn(scope) : null
+  const value = scope ? scopeValue(scope) : null
+
   useEffect(() => {
-    if (!circleId) return
+    if (!column || !value) return
 
     fetchMessages()
     subscribeToMessages()
@@ -16,14 +30,15 @@ export function useChat(circleId: string | null) {
     return () => {
       channelRef.current?.unsubscribe()
     }
-  }, [circleId])
+  }, [column, value])
 
   async function fetchMessages() {
+    if (!column || !value) return
     setLoading(true)
     const { data } = await supabase
       .from('chat_messages')
       .select('*, sender:profiles(display_name, avatar_url)')
-      .eq('circle_id', circleId!)
+      .eq(column, value)
       .order('created_at', { ascending: false })
       .limit(50)
 
@@ -32,15 +47,16 @@ export function useChat(circleId: string | null) {
   }
 
   function subscribeToMessages() {
+    if (!column || !value) return
     channelRef.current = supabase
-      .channel(`chat:${circleId}`)
+      .channel(`chat:${column}:${value}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'chat_messages',
-          filter: `circle_id=eq.${circleId}`,
+          filter: `${column}=eq.${value}`,
         },
         async (payload) => {
           // Fetch sender info for new message
@@ -62,13 +78,25 @@ export function useChat(circleId: string | null) {
   }
 
   async function sendMessage(content: string, senderId: string) {
-    if (!circleId || !content.trim()) return
+    if (!column || !value || !content.trim()) return
 
-    await supabase.from('chat_messages').insert({
-      circle_id: circleId,
-      sender_id: senderId,
-      content: content.trim(),
-    })
+    const messageInsert: Database['public']['Tables']['chat_messages']['Insert'] = column === 'circle_id'
+      ? { circle_id: value, sender_id: senderId, content: content.trim() }
+      : { callout_id: value, sender_id: senderId, content: content.trim() }
+
+    // Insert and prepend locally rather than waiting on the realtime echo —
+    // works even when the project's Realtime publication isn't configured
+    // for this table, and gives the sender instant feedback either way.
+    const { data } = await supabase
+      .from('chat_messages')
+      .insert(messageInsert)
+      .select('*, sender:profiles(display_name, avatar_url)')
+      .single()
+
+    if (data) {
+      const newMessage = data as unknown as ChatMessageWithSender
+      setMessages((prev) => (prev.some((m) => m.id === newMessage.id) ? prev : [newMessage, ...prev]))
+    }
   }
 
   return { messages, loading, sendMessage, refetch: fetchMessages }

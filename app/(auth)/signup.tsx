@@ -4,6 +4,8 @@ import { Link, useRouter } from 'expo-router'
 import { supabase } from '../../src/lib/supabase'
 import { Button } from '../../src/components/ui/Button'
 import { Input } from '../../src/components/ui/Input'
+import { colors, radius, type } from '../../src/constants/theme'
+import { BodyMetricsFields, emptyBodyMetrics, validateBodyMetrics } from '../../src/components/profile/BodyMetricsFields'
 
 export default function SignupScreen() {
   const router = useRouter()
@@ -11,6 +13,7 @@ export default function SignupScreen() {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [bodyMetrics, setBodyMetrics] = useState(emptyBodyMetrics)
   const [loading, setLoading] = useState(false)
 
   async function handleSignup() {
@@ -22,6 +25,11 @@ export default function SignupScreen() {
       Alert.alert('Weak password', 'Password must be at least 6 characters.')
       return
     }
+    const metrics = validateBodyMetrics(bodyMetrics)
+    if (!metrics.payload) {
+      Alert.alert('Check your measurements', metrics.error)
+      return
+    }
     setLoading(true)
 
     const { data, error } = await supabase.auth.signUp({ email: email.trim(), password })
@@ -31,7 +39,6 @@ export default function SignupScreen() {
       return
     }
 
-    // Create profile
     const { error: profileError } = await supabase.from('profiles').insert({
       id: data.user.id,
       username: username.trim().toLowerCase(),
@@ -41,6 +48,7 @@ export default function SignupScreen() {
       level: 1,
       current_streak: 0,
       longest_streak: 0,
+      ...metrics.payload,
     })
 
     setLoading(false)
@@ -57,9 +65,11 @@ export default function SignupScreen() {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.logo}>💪</Text>
+          <View style={styles.logoBox}>
+            <Text style={styles.logoText}>FB</Text>
+          </View>
           <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Invite-only. No public profiles.</Text>
+          <Text style={styles.subtitle}>Invite-only · No public profiles</Text>
         </View>
 
         <View style={styles.form}>
@@ -92,7 +102,13 @@ export default function SignupScreen() {
             secureTextEntry
             placeholder="Min. 6 characters"
           />
-          <Button label="Create Account" onPress={handleSignup} loading={loading} style={styles.button} />
+          <View style={styles.measurementHeader}>
+            <Text style={styles.measurementEyebrow}>YOUR TALE OF THE TAPE</Text>
+            <Text style={styles.measurementTitle}>Starting Measurements</Text>
+            <Text style={styles.measurementSub}>Private to you. Used to personalize progress and show your preferred units.</Text>
+          </View>
+          <BodyMetricsFields value={bodyMetrics} onChange={setBodyMetrics} />
+          <Button label="Create Account" onPress={handleSignup} loading={loading} size="lg" style={styles.btn} />
         </View>
 
         <View style={styles.footer}>
@@ -105,15 +121,27 @@ export default function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 40 },
-  header: { alignItems: 'center', gap: 8 },
-  logo: { fontSize: 56 },
-  title: { color: '#F1F5F9', fontSize: 32, fontWeight: '800' },
-  subtitle: { color: '#64748B', fontSize: 15 },
-  form: { gap: 16 },
-  button: { marginTop: 8 },
+  flex: { flex: 1, backgroundColor: colors.bg },
+  container: { flexGrow: 1, width: '100%', maxWidth: 680, alignSelf: 'center', padding: 28, paddingTop: 64, paddingBottom: 44, gap: 36 },
+  header: { alignItems: 'center', gap: 12 },
+  logoBox: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.xl,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoText: { color: '#fff', fontFamily: type.display, fontSize: 24, fontWeight: '900', letterSpacing: 1 },
+  title: { color: colors.text, fontFamily: type.display, fontSize: 32, fontWeight: '900', letterSpacing: 0.2, textTransform: 'uppercase' },
+  subtitle: { color: colors.textMuted, fontSize: 14 },
+  form: { gap: 14 },
+  measurementHeader: { marginTop: 12, paddingTop: 18, borderTopWidth: 1, borderTopColor: colors.border },
+  measurementEyebrow: { color: colors.primary, fontFamily: type.display, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
+  measurementTitle: { color: colors.text, fontFamily: type.display, fontSize: 23, fontWeight: '900', textTransform: 'uppercase', marginTop: 2 },
+  measurementSub: { color: colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 3 },
+  btn: { marginTop: 6 },
   footer: { flexDirection: 'row', justifyContent: 'center' },
-  footerText: { color: '#64748B', fontSize: 15 },
-  link: { color: '#6366F1', fontSize: 15, fontWeight: '700' },
+  footerText: { color: colors.textMuted, fontSize: 14 },
+  link: { color: colors.primary, fontSize: 14, fontWeight: '700' },
 })
