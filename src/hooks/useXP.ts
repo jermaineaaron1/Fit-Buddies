@@ -8,7 +8,7 @@ import type { XPActionType } from '../types/app'
 export function useXP() {
   const { user, profile, fetchProfile } = useAuthStore()
   const { circle } = useCircleStore()
-  const { recentEvents, loading, fetchRecentEvents } = useXPStore()
+  const { recentEvents, loading, fetchRecentEvents, triggerLevelUp } = useXPStore()
 
   useEffect(() => {
     if (user?.id && circle?.id) {
@@ -16,25 +16,28 @@ export function useXP() {
     }
   }, [user?.id, circle?.id])
 
-  async function earn(actionType: XPActionType, referenceId?: string, description?: string): Promise<number> {
+  async function earn(actionType: XPActionType, referenceId?: string, description?: string, overrideAmount?: number): Promise<number> {
     if (!user?.id || !circle?.id) return 0
 
     // Handle streak logic on first action of the day
     await handleStreakAndComeback(user.id, circle.id)
 
-    const xpEarned = await awardXP({
+    const result = await awardXP({
       userId: user.id,
       circleId: circle.id,
       actionType,
       referenceId,
       description,
+      overrideAmount,
     })
 
     // Refresh profile so XP bar updates
     await fetchProfile(user.id)
     fetchRecentEvents(user.id, circle.id)
 
-    return xpEarned
+    if (result.leveledUp) triggerLevelUp(result.newLevel)
+
+    return result.xpEarned
   }
 
   return {

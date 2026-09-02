@@ -17,8 +17,9 @@ export function useAuth() {
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUserId = useAuthStore.getState().user?.id
       setSession(session)
-      if (session?.user) {
+      if (session?.user && session.user.id !== currentUserId) {
         fetchProfile(session.user.id)
       }
     })

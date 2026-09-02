@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications'
-import * as Device from 'expo-device'
+import Constants, { ExecutionEnvironment } from 'expo-constants'
 import { Platform } from 'react-native'
 import { supabase } from './supabase'
 import { getNotificationMessage } from '../constants/notifications'
@@ -16,29 +16,37 @@ Notifications.setNotificationHandler({
 })
 
 export async function registerPushToken(userId: string): Promise<void> {
-  if (!Device.isDevice) return
+  if (Platform.OS === 'web') return
+  // Remote push token registration was removed from Expo Go (SDK 53+) and logs a
+  // loud console error if attempted — skip it there; local notifications below are
+  // unaffected. Real push tokens only matter in a dev/production build anyway.
+  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return
+  try {
+    const { status: existing } = await Notifications.getPermissionsAsync()
+    let finalStatus = existing
 
-  const { status: existing } = await Notifications.getPermissionsAsync()
-  let finalStatus = existing
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync()
+      finalStatus = status
+    }
 
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync()
-    finalStatus = status
+    if (finalStatus !== 'granted') return
+
+    const tokenData = await Notifications.getExpoPushTokenAsync()
+    const token = tokenData.data
+    const platform = Platform.OS === 'ios' ? 'ios' : 'android'
+
+    await supabase.from('push_tokens').upsert(
+      { user_id: userId, token, platform, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,token' }
+    )
+  } catch {
+    // Push token registration is non-critical — skip silently in dev
   }
-
-  if (finalStatus !== 'granted') return
-
-  const tokenData = await Notifications.getExpoPushTokenAsync()
-  const token = tokenData.data
-  const platform = Platform.OS === 'ios' ? 'ios' : 'android'
-
-  await supabase.from('push_tokens').upsert(
-    { user_id: userId, token, platform, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id,token' }
-  )
 }
 
 export async function scheduleDailyReminder(): Promise<void> {
+  if (Platform.OS === 'web') return
   await Notifications.cancelAllScheduledNotificationsAsync()
 
   const msg = getNotificationMessage('daily_reminder')
@@ -63,6 +71,7 @@ export async function scheduleDailyReminder(): Promise<void> {
 }
 
 export async function sendLocalNotification(type: NotificationType, data?: Record<string, string>): Promise<void> {
+  if (Platform.OS === 'web') return
   const msg = getNotificationMessage(type)
   await Notifications.scheduleNotificationAsync({
     content: {

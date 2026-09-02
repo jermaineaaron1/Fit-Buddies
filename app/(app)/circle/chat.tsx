@@ -3,13 +3,16 @@ import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Keyboard
 import { useCircleStore } from '../../../src/store/circleStore'
 import { useAuthStore } from '../../../src/store/authStore'
 import { useChat } from '../../../src/hooks/useChat'
+import { Ionicons } from '@expo/vector-icons'
 import { useXP } from '../../../src/hooks/useXP'
 import { ChatBubble } from '../../../src/components/chat/ChatBubble'
+import { completeQuestByType } from '../../../src/lib/completeQuest'
+import { colors, type } from '../../../src/constants/theme'
 
 export default function ChatScreen() {
   const { circle } = useCircleStore()
   const { profile } = useAuthStore()
-  const { messages, loading, sendMessage } = useChat(circle?.id ?? null)
+  const { messages, loading, sendMessage } = useChat(circle?.id ? { circleId: circle.id } : null)
   const { earn } = useXP()
   const [text, setText] = useState('')
   const listRef = useRef<FlatList>(null)
@@ -27,6 +30,10 @@ export default function ChatScreen() {
       await earn('chat', undefined, 'Chat message')
       chatXPCountRef.current += 1
     }
+    // Complete the chat quest on first message of the day
+    if (chatXPCountRef.current === 1 && profile.id && circle?.id) {
+      await completeQuestByType('chat', profile.id, circle.id, earn)
+    }
   }
 
   if (!circle) {
@@ -40,7 +47,8 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>💬 {circle.name}</Text>
+        <Ionicons name="chatbubbles-outline" size={18} color={colors.primary} />
+        <Text style={styles.headerTitle}>{circle.name}</Text>
       </View>
 
       <FlatList
@@ -68,12 +76,12 @@ export default function ChatScreen() {
           value={text}
           onChangeText={setText}
           placeholder="Encourage your crew..."
-          placeholderTextColor="#475569"
+          placeholderTextColor={colors.textMuted}
           multiline
           maxLength={500}
         />
         <TouchableOpacity style={[styles.sendButton, !text.trim() && styles.sendDisabled]} onPress={handleSend} disabled={!text.trim()}>
-          <Text style={styles.sendIcon}>➤</Text>
+          <Ionicons name="send" size={18} color="#fff" />
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -81,9 +89,9 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  header: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
-  headerTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerTitle: { color: colors.text, fontFamily: type.display, fontSize: 20, fontWeight: '700', textTransform: 'uppercase' },
   messageList: { padding: 16, gap: 12, flexDirection: 'column' },
   inputRow: {
     flexDirection: 'row',
@@ -91,21 +99,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1E293B',
+    borderTopColor: colors.border,
     gap: 12,
   },
   input: {
     flex: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    color: '#F1F5F9',
+    color: colors.text,
     fontSize: 15,
     maxHeight: 100,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   sendButton: {
-    backgroundColor: '#6366F1',
+    backgroundColor: colors.primary,
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -113,9 +123,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendDisabled: { opacity: 0.4 },
-  sendIcon: { color: '#fff', fontSize: 16 },
-  empty: { flex: 1, backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: '#64748B', fontSize: 15 },
-  emptyChat: { alignItems: 'center', paddingTop: 40 },
-  emptyChatText: { color: '#475569', fontSize: 14 },
+  empty: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { color: colors.textMuted, fontSize: 15 },
+  emptyChat: { alignItems: 'center', paddingTop: 14 },
+  emptyChatText: { color: colors.textMuted, fontSize: 14 },
 })

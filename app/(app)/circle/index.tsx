@@ -1,190 +1,282 @@
-import React, { useState, useEffect } from 'react'
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Share } from 'react-native'
-import { useRouter } from 'expo-router'
+import React, { useState, useCallback } from 'react'
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, useWindowDimensions } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { useCircleStore } from '../../../src/store/circleStore'
 import { useAuthStore } from '../../../src/store/authStore'
-import { useCircle } from '../../../src/hooks/useCircle'
+import { useXP } from '../../../src/hooks/useXP'
 import { supabase } from '../../../src/lib/supabase'
-import { Card } from '../../../src/components/ui/Card'
+import { colors, radius, type } from '../../../src/constants/theme'
 import { Button } from '../../../src/components/ui/Button'
-import { LeaderboardRow } from '../../../src/components/leaderboard/LeaderboardRow'
-import type { LeaderboardEntry, LeaderboardBadge } from '../../../src/types/app'
+import { ProgressBar } from '../../../src/components/ui/ProgressBar'
+import { AnimatedPressable } from '../../../src/components/ui/AnimatedPressable'
+import type { DailyQuest, QuestCompletion } from '../../../src/types/app'
+import { AnimatedScreen } from '../../../src/components/ui/AnimatedScreen'
+
+
+const QUEST_ICONS: Record<string, string> = {
+  workout: 'barbell-outline',
+  meal: 'nutrition-outline',
+  steps: 'footsteps-outline',
+  chat: 'chatbubble-outline',
+  share: 'leaf-outline',
+}
+const QUEST_ROUTES: Record<string, string> = {
+  workout: '/(app)/log/workout',
+  meal: '/(app)/log/meal',
+  steps: '/(app)/log/steps',
+  chat: '/(app)/circle/chat',
+  share: '/(app)/share',
+}
 
 export default function CircleScreen() {
   const router = useRouter()
+  const { width } = useWindowDimensions()
   const { profile } = useAuthStore()
   const { circle, members } = useCircleStore()
-  useCircle()
+  const { earn } = useXP()
 
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [inviteCode, setInviteCode] = useState<string | null>(null)
+  const [quests, setQuests] = useState<DailyQuest[]>([])
+  const [completions, setCompletions] = useState<string[]>([])
   const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    if (circle?.id) {
-      fetchLeaderboard()
-      fetchInviteCode()
-    }
-  }, [circle?.id])
+  useFocusEffect(useCallback(() => { loadQuests() }, [profile?.id, circle?.id]))
 
-  async function fetchLeaderboard() {
-    if (!circle?.id) return
-
-    const { data } = await supabase
-      .from('circle_members')
-      .select('user_id, profiles(display_name, avatar_url, weekly_xp, total_xp, current_streak, level)')
-      .eq('circle_id', circle.id)
-
-    if (!data) return
-
-    const entries: LeaderboardEntry[] = data
-      .map((m: any) => ({
-        user_id: m.user_id,
-        display_name: m.profiles?.display_name ?? 'Unknown',
-        avatar_url: m.profiles?.avatar_url ?? null,
-        weekly_xp: m.profiles?.weekly_xp ?? 0,
-        total_xp: m.profiles?.total_xp ?? 0,
-        current_streak: m.profiles?.current_streak ?? 0,
-        level: m.profiles?.level ?? 1,
-        rank: 0,
-        badge: null,
-      }))
-      .sort((a: LeaderboardEntry, b: LeaderboardEntry) => b.weekly_xp - a.weekly_xp)
-      .map((entry: LeaderboardEntry, i: number) => ({ ...entry, rank: i + 1 }))
-
-    // Assign badges
-    assignBadges(entries)
-    setLeaderboard(entries)
+  async function loadQuests() {
+    const { data } = await supabase.from('daily_quests').select('*').eq('is_active', true)
+    setQuests(data ?? [])
+    if (!profile?.id) return
+    const today = new Date().toISOString().split('T')[0]
+    const { data: done } = await supabase
+      .from('quest_completions').select('quest_id')
+      .eq('user_id', profile.id).eq('completed_date', today)
+    setCompletions((done ?? []).map((d: Pick<QuestCompletion, 'quest_id'>) => d.quest_id))
   }
 
-  function assignBadges(entries: LeaderboardEntry[]) {
-    if (entries.length === 0) return
-    const topStreak = [...entries].sort((a, b) => b.current_streak - a.current_streak)[0]
-    if (topStreak) topStreak.badge = 'Streak Legend'
-    if (entries[0]) entries[0].badge = entries[0].badge ?? 'Top Logger'
+  async function onRefresh() { setRefreshing(true); await loadQuests(); setRefreshing(false) }
 
-    // Comeback kid: lower rank but has a streak after a gap (simplified: rank > 3 but streak > 3)
-    const comeback = entries.find((e, i) => i > 2 && e.current_streak >= 3)
-    if (comeback && !comeback.badge) comeback.badge = 'Comeback Kid'
-  }
-
-  async function fetchInviteCode() {
-    if (!circle?.id) return
-    const { data } = await supabase
-      .from('invite_codes')
-      .select('code')
-      .eq('circle_id', circle.id)
-      .eq('is_active', true)
-      .limit(1)
-      .single()
-    setInviteCode(data?.code ?? null)
-  }
-
-  async function generateInviteCode() {
-    if (!circle?.id || !profile?.id) return
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase()
-    const { data } = await supabase
-      .from('invite_codes')
-      .insert({ circle_id: circle.id, code, created_by: profile.id, max_uses: 30, is_active: true })
-      .select('code')
-      .single()
-    setInviteCode(data?.code ?? null)
-  }
-
-  async function shareInviteCode() {
-    if (!inviteCode) return
-    await Share.share({
-      message: `Join my Fit Buddies circle! Use code: ${inviteCode}\n\nDownload the app and enter this code when joining a circle.`,
-    })
-  }
-
-  async function onRefresh() {
-    setRefreshing(true)
-    await Promise.all([fetchLeaderboard(), fetchInviteCode()])
-    setRefreshing(false)
-  }
-
-  if (!circle) {
-    return (
-      <View style={styles.noCircle}>
-        <Text style={styles.noCircleEmoji}>👥</Text>
-        <Text style={styles.noCircleTitle}>No Circle Yet</Text>
-        <Text style={styles.noCircleSubtitle}>Create a circle or join one with an invite code.</Text>
-        <View style={styles.noCircleActions}>
-          <Button label="Join Circle" onPress={() => router.push('/(app)/circle/join')} />
-          <Button label="Create Circle" onPress={() => router.push('/(app)/circle/create')} variant="secondary" />
-        </View>
-      </View>
-    )
-  }
+  const completedCount = completions.length
+  const totalCount = quests.length
+  const pct = totalCount > 0 ? completedCount / totalCount : 0
 
   return (
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      showsVerticalScrollIndicator={false}
     >
-      {/* Circle Header */}
+      {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.circleName}>{circle.name}</Text>
-          <Text style={styles.memberCount}>{members.length} members</Text>
-        </View>
-        <TouchableOpacity style={styles.chatButton} onPress={() => router.push('/(app)/circle/chat')}>
-          <Text style={styles.chatButtonText}>💬 Chat</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Invite Code */}
-      <Card style={styles.inviteCard}>
-        <Text style={styles.inviteLabel}>Circle Invite Code</Text>
-        {inviteCode ? (
-          <View style={styles.codeRow}>
-            <Text style={styles.code}>{inviteCode}</Text>
-            <Button label="Share" onPress={shareInviteCode} variant="ghost" style={styles.shareButton} />
-          </View>
-        ) : (
-          <Button label="Generate Invite Code" onPress={generateInviteCode} variant="secondary" />
+        <View><Text style={styles.eyebrow}>YOUR CORNER · CREW BEFORE EGO</Text><Text style={styles.title}>Strong Alone. Unbreakable Together.</Text></View>
+        {circle && (
+          <TouchableOpacity style={styles.chatBtn} onPress={() => router.push('/(app)/circle/chat' as any)}>
+            <Ionicons name="chatbubble-outline" size={16} color={colors.primary} />
+            <Text style={styles.chatBtnText}>Locker Room</Text>
+          </TouchableOpacity>
         )}
-        <Text style={styles.inviteNote}>Private only. Share only with people you trust.</Text>
-      </Card>
-
-      {/* Weekly Leaderboard */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Weekly Leaderboard</Text>
-        <Text style={styles.sectionSubtitle}>Resets every Monday</Text>
-        {leaderboard.map((entry) => (
-          <LeaderboardRow
-            key={entry.user_id}
-            entry={entry}
-            isCurrentUser={entry.user_id === profile?.id}
-          />
-        ))}
       </View>
+
+      {/* No circle state */}
+      {!circle && (
+        <View style={styles.noCircleCard}>
+          <Ionicons name="people-outline" size={32} color={colors.primary} />
+          <View style={styles.noCircleText}>
+            <Text style={styles.noCircleTitle}>You're not in a circle</Text>
+            <Text style={styles.noCircleSub}>Join one to see your fellow contenders.</Text>
+          </View>
+          <Button label="Join / Create" onPress={() => router.push('/(app)/circle/join' as any)} size="sm" />
+        </View>
+      )}
+
+      <View style={[styles.combatGrid, width >= 900 && styles.combatGridDesktop]}>
+      {/* Roster */}
+      {circle && members.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionTitle}>Roster</Text>
+            <Text style={styles.sectionSub}>{members.length} contenders</Text>
+          </View>
+          <View style={styles.roster}>
+            {members.map(m => (
+              <View key={m.user_id} style={styles.rosterCard}>
+                <View style={[styles.rosterAvatar, m.user_id === profile?.id && styles.rosterAvatarMe]}>
+                  <Text style={styles.rosterAvatarText}>{(m.profile?.display_name ?? '?').charAt(0).toUpperCase()}</Text>
+                </View>
+                <Text style={styles.rosterName} numberOfLines={1}>
+                  {m.profile?.display_name ?? 'Unknown'}{m.user_id === profile?.id ? ' (you)' : ''}
+                </Text>
+                <Text style={styles.rosterMeta}>Lv.{m.profile?.level ?? 1}</Text>
+                {(m.profile?.current_streak ?? 0) > 0 && (
+                  <View style={styles.rosterStreak}>
+                    <Ionicons name="flame" size={10} color={colors.warning} />
+                    <Text style={styles.rosterStreakText}>{m.profile?.current_streak}d</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Daily Quests */}
+      <View style={styles.section}>
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>Four Ways to Advance</Text>
+          <Text style={styles.sectionSub}>{completedCount}/{totalCount} done</Text>
+        </View>
+
+        {/* Progress bar */}
+        <ProgressBar progress={pct} color={colors.accent} trackColor={colors.border} height={4} />
+
+        <View style={styles.questList}>
+          {quests.map(quest => {
+            const done = completions.includes(quest.id)
+            const route = QUEST_ROUTES[quest.quest_type]
+            return (
+              <AnimatedPressable
+                key={quest.id}
+                style={[styles.questCard, done && styles.questDone]}
+                onPress={() => !done && route && router.push(route as any)}
+                disabled={done}
+              >
+                <View style={[styles.questIcon, done && styles.questIconDone]}>
+                  <Ionicons
+                    name={(done ? 'checkmark' : (QUEST_ICONS[quest.quest_type] ?? 'star-outline')) as any}
+                    size={18}
+                    color={done ? colors.accent : colors.primary}
+                  />
+                </View>
+                <View style={styles.questBody}>
+                  <Text style={[styles.questTitle, done && styles.questTitleDone]}>{quest.title}</Text>
+                  {!done && <Text style={styles.questCta}>{getCTA(quest.quest_type)}</Text>}
+                  {done && <Text style={styles.questDoneLabel}>Completed today</Text>}
+                </View>
+                {!done && (
+                  <View style={styles.xpPill}>
+                    <Text style={styles.xpPillText}>+{quest.xp_reward} XP</Text>
+                  </View>
+                )}
+              </AnimatedPressable>
+            )
+          })}
+        </View>
+      </View>
+      </View>
+
+      {/* Circle actions */}
+      {circle && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Settings</Text>
+          <View style={styles.actionList}>
+            <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/(app)/circle/join' as any)}>
+              <Ionicons name="person-add-outline" size={20} color={colors.primary} />
+              <Text style={styles.actionLabel}>Invite a Friend</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/(app)/circle/chat' as any)}>
+              <Ionicons name="chatbubbles-outline" size={20} color={colors.primary} />
+              <Text style={styles.actionLabel}>Locker Room</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </ScrollView>
   )
 }
 
+function getCTA(type: string) {
+  const map: Record<string, string> = {
+    workout: 'Tap to log a workout →',
+    meal: 'Tap to log a meal →',
+    steps: 'Tap to log steps →',
+    chat: 'Tap to send a message →',
+    share: 'Tap to share something →',
+  }
+  return map[type] ?? 'Tap to complete →'
+}
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0F172A' },
-  container: { padding: 20, gap: 20, paddingBottom: 40 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  circleName: { color: '#F1F5F9', fontSize: 24, fontWeight: '800' },
-  memberCount: { color: '#64748B', fontSize: 14, marginTop: 2 },
-  chatButton: { backgroundColor: '#1E293B', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#334155' },
-  chatButtonText: { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
-  inviteCard: { gap: 10 },
-  inviteLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
-  codeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  code: { color: '#6366F1', fontSize: 28, fontWeight: '800', letterSpacing: 4, flex: 1 },
-  shareButton: { paddingVertical: 8, paddingHorizontal: 16 },
-  inviteNote: { color: '#475569', fontSize: 12 },
-  section: { gap: 8 },
-  sectionTitle: { color: '#F1F5F9', fontSize: 18, fontWeight: '700' },
-  sectionSubtitle: { color: '#475569', fontSize: 13, marginBottom: 4 },
-  noCircle: { flex: 1, backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  noCircleEmoji: { fontSize: 56 },
-  noCircleTitle: { color: '#F1F5F9', fontSize: 24, fontWeight: '800' },
-  noCircleSubtitle: { color: '#64748B', fontSize: 15, textAlign: 'center' },
-  noCircleActions: { gap: 12, width: '100%', marginTop: 8 },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  container: { width: '100%', maxWidth: 1180, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 32, gap: 24 },
+
+  header: { display: 'none', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  eyebrow: { color: colors.gold, fontFamily: type.display, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginBottom: 3 },
+  title: { maxWidth: 700, color: colors.text, fontFamily: type.display, fontSize: 30, fontWeight: '900', letterSpacing: 0.2, textTransform: 'uppercase' },
+  chatBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.primaryGlow, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: radius.full, borderWidth: 1, borderColor: colors.primary + '40',
+  },
+  chatBtnText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+
+  noCircleCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: 16,
+  },
+  noCircleText: { flex: 1 },
+  noCircleTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  noCircleSub: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+
+  roster: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  rosterCard: {
+    width: '31%', alignItems: 'center', gap: 4,
+    backgroundColor: colors.card, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, paddingVertical: 14, paddingHorizontal: 6,
+  },
+  rosterAvatar: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
+  },
+  rosterAvatarMe: { backgroundColor: colors.primary },
+  rosterAvatarText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  rosterName: { color: colors.text, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  rosterMeta: { color: colors.textMuted, fontSize: 10 },
+  rosterStreak: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
+  rosterStreakText: { color: colors.warning, fontSize: 10, fontWeight: '700' },
+
+  combatGrid: { gap: 16 },
+  combatGridDesktop: { flexDirection: 'row', alignItems: 'flex-start' },
+  section: { flex: 1, gap: 12 },
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionTitle: { color: colors.text, fontFamily: type.display, fontSize: 19, fontWeight: '700', textTransform: 'uppercase' },
+  sectionSub: { color: colors.textMuted, fontSize: 13 },
+
+
+  questList: { gap: 8 },
+  questCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.card, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border, borderLeftWidth: 5, borderLeftColor: colors.primary, padding: 14,
+  },
+  questDone: { opacity: 0.6, borderColor: colors.accent + '40' },
+  questIcon: {
+    width: 38, height: 38, borderRadius: radius.sm,
+    backgroundColor: colors.primaryGlow,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  questIconDone: { backgroundColor: colors.accentGlow },
+  questBody: { flex: 1 },
+  questTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  questTitleDone: { color: colors.textMuted, textDecorationLine: 'line-through' },
+  questCta: { color: colors.primary, fontSize: 11, marginTop: 2 },
+  questDoneLabel: { color: colors.accent, fontSize: 11, marginTop: 2 },
+  xpPill: {
+    backgroundColor: colors.accentGlow, borderRadius: radius.sm,
+    paddingHorizontal: 9, paddingVertical: 5,
+  },
+  xpPillText: { color: colors.gold, fontSize: 12, fontWeight: '700' },
+
+  actionList: {
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  actionRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 15,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  actionLabel: { flex: 1, color: colors.text, fontSize: 15, fontWeight: '500' },
 })
