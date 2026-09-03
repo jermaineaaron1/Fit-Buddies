@@ -30,6 +30,17 @@ import { colors, type } from '../../src/constants/theme'
 
 const ACK_KEY = 'belt:last_seen_resolution'
 
+/**
+ * How far a contender is from a title shot. Only the top five rungs of the
+ * ladder put the belt on the line, so anyone below is told the gap to close
+ * rather than a points total they cannot interpret.
+ */
+function placesShort(rank: number): string {
+  const gap = rank - ELIGIBILITY_LADDER.length
+  if (gap <= 0) return 'Eligible'
+  return gap === 1 ? '1 place from a title shot' : `${gap} places from a title shot`
+}
+
 const ELIMINATION_COPY: Record<string, string> = {
   login_streak_broken: 'Streak broken',
   missed_weekly_sessions: 'Missed sessions',
@@ -125,7 +136,9 @@ export default function BeltScreen() {
             status={
               snapshot?.champion
                 ? reignLength(snapshot.belt?.reign_started_at ?? null)
-                : 'Finish a title challenge to crown the first champion.'
+                // The strip gives status one line; the longer explanation
+                // already sits in the card immediately below it.
+                : 'Nobody holds the belt yet.'
             }
           />
           {snapshot?.champion && (
@@ -134,9 +147,10 @@ export default function BeltScreen() {
               <View style={styles.divider} />
               <StatItem label="Defences" value={String(record?.total_defenses ?? 0)} icon="shield-checkmark" style={styles.stat} />
               <View style={styles.divider} />
-              <StatItem label="Cycle streak" value={String(record?.current_streak_as_champion ?? 0)} icon="flame" style={styles.stat} />
-              <View style={styles.divider} />
-              <StatItem label="Cycle" value={cycleLabel} icon="calendar-outline" style={styles.stat} />
+              {/* The defence cycle is stated in full in the status card
+                  immediately below, where it has room; a fourth column here
+                  only clipped "Weekly" to "Wee…". */}
+              <StatItem label="Streak" value={String(record?.current_streak_as_champion ?? 0)} icon="flame" style={styles.stat} />
             </CompactCard>
           )}
         </View>
@@ -219,21 +233,22 @@ export default function BeltScreen() {
                     rank={standing.is_eliminated ? 0 : rank}
                     name={standing.display_name}
                     avatarUrl={standing.avatar_url}
-                    // Eligibility is the subtitle, not the pill: the pill sits
-                    // in the same row as the name and points, and a phrase like
+                    // Eligibility lives in the subtitle, not a pill: the pill
+                    // shares a row with the name and points, and a phrase like
                     // "Championship Elimination" there squeezes the name out.
+                    // Outside the top five it says how far off a shot you are,
+                    // which is actionable where a raw points total is not.
                     subtitle={
                       standing.is_eliminated
                         ? `Out · ${ELIMINATION_COPY[standing.eliminated_reason ?? ''] ?? 'Requirements not met'}`
                         : rung
                           ? `Eligible · ${rung.label}`
-                          : `${Math.round(Number(standing.total_points))} of ${maxPoints} possible`
+                          : placesShort(rank)
                     }
                     points={Math.round(Number(standing.total_points))}
                     streakDays={null}
                     isSelf={standing.user_id === profile?.id}
                     eliminated={standing.is_eliminated}
-                    badge={standing.is_eliminated ? undefined : rung ? 'Eligible' : undefined}
                   />
                 )
               })}
@@ -332,7 +347,9 @@ export default function BeltScreen() {
 const styles = StyleSheet.create({
   section: { gap: 8 },
   rows: { gap: 6 },
-  recordStrip: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+  // Four figures across a 375px phone clipped 'Cycle streak' and 'Weekly'
+  // to ellipses; a tighter gap plus a shorter label lets all four breathe.
+  recordStrip: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 10 },
   stat: { flex: 1 },
   divider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
   statusHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },

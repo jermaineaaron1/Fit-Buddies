@@ -42,7 +42,9 @@ export function ContenderRow({
   const body = (
     <>
       {isSelf && <View style={styles.selfRail} />}
-      <Text style={[styles.rank, { color: rankInk }]}>{rank}</Text>
+      {/* A rank of 0 means "no longer ranked" — showing the digit reads as a
+          real position above first place. */}
+      <Text style={[styles.rank, { color: rankInk }]}>{rank > 0 ? rank : '—'}</Text>
 
       <View style={[styles.avatar, isSelf && styles.avatarSelf, isChampion && styles.avatarChampion]}>
         {avatarUrl
@@ -98,7 +100,7 @@ export function ContenderRow({
     </>
   )
 
-  const label = `Rank ${rank}, ${name}, ${points} points${badge ? `, ${badge}` : ''}`
+  const label = `${rank > 0 ? `Rank ${rank}, ` : ''}${name}, ${points} points${eliminated ? ', eliminated' : ''}${badge ? `, ${badge}` : ''}`
   const box = [styles.row, isSelf && styles.rowSelf, eliminated && styles.rowEliminated]
 
   if (!onPress) return <View style={box} accessible accessibilityLabel={label}>{body}</View>
