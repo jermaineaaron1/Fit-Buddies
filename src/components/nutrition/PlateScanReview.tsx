@@ -24,6 +24,8 @@ interface PlateScanReviewProps {
   onDiscard: () => void
   /** Nudges the user to correct rather than replace, when a match exists. */
   onReplace?: (item: ReviewItem) => void
+  /** Opens the food database so a missed ingredient gets real values. */
+  onAddFromDatabase?: () => void
 }
 
 const DISH_BASIS: { value: DishBasis; label: string }[] = [
@@ -41,7 +43,7 @@ const DISH_BASIS: { value: DishBasis; label: string }[] = [
  * explicit act — the estimate never becomes a log entry on its own.
  */
 export function PlateScanReview({
-  photoUri, items, onChange, onConfirm, onDiscard, onReplace,
+  photoUri, items, onChange, onConfirm, onDiscard, onReplace, onAddFromDatabase,
 }: PlateScanReviewProps) {
   const [basis, setBasis] = useState<DishBasis>('as_shown')
   const [servings, setServings] = useState('1')
@@ -153,12 +155,20 @@ export function PlateScanReview({
 
       <View style={styles.missing}>
         <Text style={styles.missingLabel}>Add what the photo could not see</Text>
+        <Text style={styles.missingHint}>
+          Oil, sauce and sugar are invisible in a photograph and are the usual reason a scan reads low.
+        </Text>
         <View style={styles.missingRow}>
           {['Cooking oil', 'Sauce', 'Dressing', 'Sugar', 'Butter'].map((name) => (
             <CompactButton key={name} label={name} icon="add" size="sm" onPress={() => addMissing(name)} />
           ))}
         </View>
-        <CompactButton label="Other ingredient" icon="create-outline" size="sm" onPress={() => addMissing('')} />
+        <View style={styles.missingRow}>
+          {onAddFromDatabase && (
+            <CompactButton label="Search food database" icon="search" size="sm" tone="gold" onPress={onAddFromDatabase} />
+          )}
+          <CompactButton label="Blank ingredient" icon="create-outline" size="sm" onPress={() => addMissing('')} />
+        </View>
       </View>
 
       <CompactCard accent="blue" style={styles.totals}>
@@ -213,6 +223,7 @@ const styles = StyleSheet.create({
   recipeNote: { color: colors.textMuted, fontSize: 11, lineHeight: 15 },
   missing: { gap: 7 },
   missingLabel: { color: colors.textMuted, fontFamily: type.display, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.9 },
+  missingHint: { color: colors.textMuted, fontSize: 10.5, lineHeight: 15 },
   missingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   totals: { gap: 4 },
   totalRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },

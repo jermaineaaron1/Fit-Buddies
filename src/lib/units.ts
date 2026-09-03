@@ -52,8 +52,12 @@ export const UNITS: readonly UnitInfo[] = [
   { unit: 'ladle', label: 'ladle', name: 'Ladles', group: 'household', approxGrams: 60, approximate: true },
 ] as const
 
-/** Kept short for the inline row; the rest live behind "More units". */
-export const COMMON_UNITS: readonly QuantityUnit[] = ['g', 'ml', 'piece', 'cup', 'bowl', 'serving']
+/**
+ * The inline row. Deliberately five, not more: a sixth pushed the row to three
+ * lines on a 375px screen and stranded the "More" control on its own. Cups
+ * still exist, just one tap further away.
+ */
+export const COMMON_UNITS: readonly QuantityUnit[] = ['g', 'ml', 'piece', 'bowl', 'serving']
 
 const BY_UNIT = new Map(UNITS.map((info) => [info.unit, info]))
 

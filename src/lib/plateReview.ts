@@ -96,6 +96,52 @@ export function blankReviewItem(name = ''): ReviewItem {
 }
 
 /**
+ * A review row built from a food the user picked out of the database, so a
+ * missed ingredient can be added with real per-100g values rather than typed
+ * from memory. Confidence is high because nothing was guessed from a photo.
+ */
+export function reviewItemFromFood(food: {
+  name: string
+  caloriesPer100g: number | null
+  proteinPer100g: number | null
+  carbsPer100g: number | null
+  fatPer100g: number | null
+  servingGrams?: number | null
+}, quantity = 100, unit: QuantityUnit = 'g'): ReviewItem {
+  const per100g: Macros = {
+    calories: food.caloriesPer100g ?? 0,
+    protein: food.proteinPer100g ?? 0,
+    carbs: food.carbsPer100g ?? 0,
+    fat: food.fatPer100g ?? 0,
+  }
+  const grams = toGrams(quantity, unit, food.servingGrams)
+  const factor = (grams ?? 100) / 100
+
+  return {
+    key: nextKey(),
+    name: food.name,
+    quantity,
+    unit,
+    grams,
+    preparation: 'unknown',
+    macros: {
+      calories: Math.round(per100g.calories * factor),
+      protein: round1(per100g.protein * factor),
+      carbs: round1(per100g.carbs * factor),
+      fat: round1(per100g.fat * factor),
+    },
+    confidence: 'high',
+    matchedFood: food.name,
+    sizeReference: null,
+    gramsMin: null,
+    gramsMax: null,
+    cookingMethod: null,
+    per100g,
+    addedByUser: true,
+  }
+}
+
+/**
  * Applies a quantity or unit change and rescales the macros from the per-100g
  * basis. Editing the number is the single most common correction, so it has to
  * carry the macros with it — leaving them stale is how a "corrected" entry ends

@@ -44,16 +44,17 @@ export function UnitSelector({ value, onChange, common = COMMON_UNITS, disabled 
             onPress={() => onChange(unit)}
           />
         ))}
+        {/* Icon-only: a "More" label was wide enough to push itself onto a
+            third row of its own on a 375px screen. */}
         <AnimatedPressable
           onPress={() => setSheetOpen(true)}
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel="More units"
-          hitSlop={{ top: 9, bottom: 9, left: 4, right: 4 }}
+          hitSlop={{ top: 9, bottom: 9, left: 6, right: 6 }}
           style={styles.more}
         >
-          <Text style={styles.moreText}>More</Text>
-          <Ionicons name="chevron-down" size={11} color={colors.textSecondary} />
+          <Ionicons name="ellipsis-horizontal" size={13} color={colors.textSecondary} />
         </AnimatedPressable>
       </View>
 
@@ -99,10 +100,10 @@ export function UnitSelector({ value, onChange, common = COMMON_UNITS, disabled 
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5 },
   more: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: 9, paddingVertical: 5, minHeight: 26,
+    alignItems: 'center', justifyContent: 'center',
+    width: 30, minHeight: 26,
     borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
   },
   moreText: { color: colors.textSecondary, fontFamily: type.display, fontSize: 10.5, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.7 },
