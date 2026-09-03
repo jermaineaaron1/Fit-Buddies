@@ -36,12 +36,16 @@ alter table body_measurements enable row level security;
 revoke all on body_measurements from anon, authenticated;
 grant select, insert, update, delete on body_measurements to authenticated;
 
+drop policy if exists "own measurements read" on body_measurements;
 create policy "own measurements read" on body_measurements
   for select to authenticated using (user_id = auth.uid());
+drop policy if exists "own measurements insert" on body_measurements;
 create policy "own measurements insert" on body_measurements
   for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists "own measurements update" on body_measurements;
 create policy "own measurements update" on body_measurements
   for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists "own measurements delete" on body_measurements;
 create policy "own measurements delete" on body_measurements
   for delete to authenticated using (user_id = auth.uid());
 

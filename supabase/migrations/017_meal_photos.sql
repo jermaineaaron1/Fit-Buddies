@@ -65,5 +65,6 @@ alter table meal_photo_analyses enable row level security;
 revoke all on meal_photo_analyses from anon, authenticated;
 grant select on meal_photo_analyses to authenticated;
 
+drop policy if exists "own analyses" on meal_photo_analyses;
 create policy "own analyses" on meal_photo_analyses
   for select to authenticated using (user_id = auth.uid());
