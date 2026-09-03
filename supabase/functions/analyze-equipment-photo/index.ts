@@ -171,7 +171,12 @@ Deno.serve(async (req: Request) => {
 
     const response = await client.messages.parse({
       model: MODEL,
-      max_tokens: 2048,
+      // Opus 5 runs adaptive thinking by default and those tokens count
+      // against max_tokens. At 2-4k a vision request that reasons about
+      // portions can truncate mid-response, leaving parsed_output null — which
+      // surfaces to the user as "could not read that photo" rather than as the
+      // cap it actually is. 16k is the documented non-streaming default.
+      max_tokens: 16000,
       system: systemBlocks,
       messages: [
         {
