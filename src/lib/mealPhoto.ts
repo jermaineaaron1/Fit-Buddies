@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { describeInvokeError } from './edgeFunctionError'
 import { pickPhoto, readPhotoBytes, photoContentType, type PhotoSource } from './photoPicker'
 import { MALAYSIAN_FOODS } from '../constants/malaysianFoods'
 import type { QuantityUnit } from './openFoodFacts'
@@ -65,7 +66,7 @@ export async function analyseMealPhoto(
       recentFoods,
     },
   })
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: describeInvokeError(error, 'Photo scanning') }
   if (data?.error) return { ok: false, error: String(data.error) }
 
   const items = ((data?.items ?? []) as EstimatedItem[]).map(groundAgainstKnownFoods)

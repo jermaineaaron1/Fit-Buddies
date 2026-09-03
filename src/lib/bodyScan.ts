@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { describeInvokeError } from './edgeFunctionError'
 import { readPhotoBytes, photoContentType } from './photoPicker'
 
 export interface BodyScanResult {
@@ -45,7 +46,7 @@ export async function analyseBodyScan(uri: string, userId: string): Promise<
   const { data, error } = await supabase.functions.invoke('analyze-body-scan', {
     body: { scanPath },
   })
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: describeInvokeError(error, 'Scan reading') }
   if (data?.error) return { ok: false, error: String(data.error) }
 
   // The function reports printed figures verbatim and flags the unit rather
