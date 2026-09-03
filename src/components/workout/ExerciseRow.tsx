@@ -95,5 +95,7 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontFamily: type.display, fontSize: 13.5, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
   nameDone: { color: colors.textSecondary },
   meta: { color: colors.textMuted, fontSize: 10.5 },
-  reorder: { gap: 2 },
+  // Laid out horizontally: stacked, these two buttons were taller than
+  // the row's content and pushed every row to ~95px.
+  reorder: { flexDirection: 'row', gap: 2 },
 })

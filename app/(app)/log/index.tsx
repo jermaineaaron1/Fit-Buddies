@@ -15,6 +15,7 @@ import { StatItem } from '../../../src/components/ui/StatItem'
 import { Chip } from '../../../src/components/ui/Chip'
 import { EmptyState } from '../../../src/components/ui/EmptyState'
 import { LoadingState } from '../../../src/components/ui/LoadingState'
+import { AnimatedPressable } from '../../../src/components/ui/AnimatedPressable'
 import { ExerciseRow } from '../../../src/components/workout/ExerciseRow'
 import { EquipmentScanner, type ConfirmedEquipment } from '../../../src/components/workout/EquipmentScanner'
 import { estimateWorkoutCalories } from '../../../src/lib/energyEstimates'
@@ -166,7 +167,7 @@ export default function TrainingScreen() {
             <View style={styles.divider} />
             <StatItem label="Est. time" value={estimate ? `${estimate} min` : '—'} icon="time-outline" style={styles.stat} />
             <View style={styles.divider} />
-            <StatItem label="Est. burn" value={burn ? `${burn} kcal` : '—'} icon="flame" tone="red" style={styles.stat} />
+            <StatItem label="Est. kcal" value={burn ? String(burn) : '—'} icon="flame" tone="red" style={styles.stat} />
           </View>
         ) : null}
 
@@ -225,19 +226,33 @@ export default function TrainingScreen() {
       <View style={styles.section}>
         <SectionHeader title="Recent Sessions" />
         {recent.length ? (
-          <View style={styles.rows}>
+          // Not ExerciseRow: a past session is not an exercise, and borrowing
+          // that component printed the exercise count where a position number
+          // goes and labelled every session "Strength" regardless of content.
+          <CompactCard padded={false} style={styles.historyCard}>
             {recent.slice(0, 5).map((workout) => (
-              <ExerciseRow
+              <AnimatedPressable
                 key={workout.id}
-                order={workout.exercises.length}
-                name={workout.title}
-                measurementType="strength"
-                plannedSets={null}
-                equipment={new Date(workout.logged_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                style={styles.historyRow}
                 onPress={() => router.push(`/(app)/log/workout?repeat=${workout.id}` as never)}
-              />
+                accessibilityRole="button"
+                accessibilityLabel={`Repeat ${workout.title}, ${workout.exercises.length} exercises`}
+              >
+                <Ionicons name="repeat" size={15} color={colors.gold} />
+                <View style={styles.historyCopy}>
+                  <Text style={styles.historyName} numberOfLines={1}>{workout.title}</Text>
+                  <Text style={styles.historyMeta} numberOfLines={1}>
+                    {workout.exercises.length} {workout.exercises.length === 1 ? 'exercise' : 'exercises'}
+                    {workout.duration_minutes ? ` · ${workout.duration_minutes} min` : ''}
+                  </Text>
+                </View>
+                <Text style={styles.historyDate}>
+                  {new Date(workout.logged_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+              </AnimatedPressable>
             ))}
-          </View>
+          </CompactCard>
         ) : (
           <EmptyState icon="time-outline" title="No sessions logged" message="Your history builds from here." compact />
         )}
@@ -309,6 +324,15 @@ const styles = StyleSheet.create({
   focus: { color: colors.textSecondary, fontSize: 11.5 },
   planActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   primaryAction: { minWidth: 148 },
+  historyCard: { paddingHorizontal: 11 },
+  historyRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  historyCopy: { flex: 1, minWidth: 0 },
+  historyName: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  historyMeta: { color: colors.textMuted, fontSize: 10.5, marginTop: 1 },
+  historyDate: { color: colors.textMuted, fontSize: 10.5 },
   quickHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   quickTitle: { color: colors.text, fontFamily: type.display, fontSize: 13, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
   quickCopy: { color: colors.textMuted, fontSize: 11.5, marginTop: 4, marginBottom: 10 },
