@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fit Buddies",
     "slug": "fit-buddies",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -18,7 +18,7 @@
         "backgroundColor": "#0B0908"
       },
       "package": "com.fitbuddies.app",
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "bundler": "metro"
@@ -52,6 +52,12 @@
         "projectId": "0618803a-864b-419c-96a8-2a845af26a4d"
       }
     },
-    "owner": "fit-buddies"
+    "owner": "fit-buddies",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0618803a-864b-419c-96a8-2a845af26a4d"
+    }
   }
 }
