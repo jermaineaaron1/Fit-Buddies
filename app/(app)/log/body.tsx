@@ -5,7 +5,9 @@ import { useFocusEffect } from 'expo-router'
 import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/store/authStore'
 import { Button } from '../../../src/components/ui/Button'
+import { useRouter } from 'expo-router'
 import { Input } from '../../../src/components/ui/Input'
+import { IconButton } from '../../../src/components/ui/IconButton'
 import { WeightTrendChart } from '../../../src/components/body/WeightTrendChart'
 import { CompositionSummaryCard } from '../../../src/components/body/CompositionSummaryCard'
 import {
@@ -24,6 +26,7 @@ const SOURCES: { value: MeasurementSource; label: string }[] = [
 ]
 
 export default function LogBodyScreen() {
+  const router = useRouter()
   const { profile } = useAuthStore()
 
   const [measurements, setMeasurements] = useState<BodyMeasurement[]>([])
@@ -140,13 +143,13 @@ export default function LogBodyScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <View>
-        <Text style={styles.eyebrow}>THE TALE OF THE SCALE</Text>
-        <Text style={styles.title}>Weigh-In</Text>
-        <Text style={styles.subtitle}>
-          Weight alone can't tell you whether you're losing fat or losing muscle. Add body fat and it can.
-        </Text>
+      <View style={styles.pageHead}>
+        <IconButton icon="arrow-back" onPress={() => router.back()} accessibilityLabel="Go back" />
+        <Text style={styles.title}>Weigh-in</Text>
       </View>
+      <Text style={styles.subtitle}>
+        Weight alone cannot tell you whether you are losing fat or losing muscle. Add body fat and it can.
+      </Text>
 
       <View style={styles.chartCard}>
         <Text style={styles.cardLabel}>WEIGHT TREND</Text>
@@ -292,6 +295,7 @@ export default function LogBodyScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
+  pageHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   container: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 20, gap: 14, paddingTop: 14, paddingBottom: 96 },
   eyebrow: { color: colors.gold, fontFamily: type.display, fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
   title: { color: colors.text, fontFamily: type.display, fontSize: 30, fontWeight: '900', textTransform: 'uppercase' },

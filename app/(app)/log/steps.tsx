@@ -1,14 +1,19 @@
 import React, { useState } from 'react'
-import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native'
+import { View, Text, StyleSheet } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/store/authStore'
 import { useCircleStore } from '../../../src/store/circleStore'
 import { useXP } from '../../../src/hooks/useXP'
 import { XP_VALUES } from '../../../src/constants/xp'
-import { Button } from '../../../src/components/ui/Button'
-import { Input } from '../../../src/components/ui/Input'
-import { Card } from '../../../src/components/ui/Card'
+import { PageContainer } from '../../../src/components/layout/PageContainer'
+import { CompactCard } from '../../../src/components/ui/CompactCard'
+import { CompactButton } from '../../../src/components/ui/CompactButton'
+import { IconButton } from '../../../src/components/ui/IconButton'
+import { NumericInput } from '../../../src/components/ui/NumericInput'
+import { Chip } from '../../../src/components/ui/Chip'
+import { ProgressBar } from '../../../src/components/ui/ProgressBar'
 import { NoCircleBanner } from '../../../src/components/ui/NoCircleBanner'
 import { completeQuestByType } from '../../../src/lib/completeQuest'
 import { colors, type } from '../../../src/constants/theme'
@@ -21,118 +26,154 @@ export default function LogStepsScreen() {
 
   const [steps, setSteps] = useState('')
   const [goal, setGoal] = useState('10000')
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const stepCount = parseInt(steps) || 0
-  const goalCount = parseInt(goal) || 10000
+  const stepCount = parseInt(steps, 10) || 0
+  const goalCount = parseInt(goal, 10) || 10000
   const goalHit = stepCount >= goalCount
   const xpEarned = goalHit ? XP_VALUES.STEPS_GOAL_HIT : XP_VALUES.STEPS_LOGGED
-  const progress = Math.min(stepCount / goalCount, 1)
+  const progress = Math.min(stepCount / Math.max(goalCount, 1), 1)
+  const remaining = Math.max(0, goalCount - stepCount)
 
   async function handleSave() {
-    if (!steps || stepCount <= 0) {
-      Alert.alert('Missing steps', 'Enter your step count.')
-      return
-    }
-    if (!profile?.id || !circle?.id) return
-    setLoading(true)
+    setError(null)
+    if (stepCount <= 0) { setError('Enter your step count first.'); return }
+    if (!profile?.id || !circle?.id) { setError('You need to be in a circle to log steps.'); return }
 
+    setSaving(true)
     const today = new Date().toISOString().split('T')[0]
 
-    // This is an upsert on (user_id, log_date), so correcting today's count
-    // updates the existing row rather than adding one. XP is per-day, not
-    // per-save — without this check, re-logging would pay out again each time.
+    // Upsert on (user_id, log_date), so correcting today's count updates the
+    // existing row rather than adding one. XP is per-day, not per-save —
+    // without this check, re-logging would pay out again each time.
     const { data: alreadyLogged } = await supabase
-      .from('step_logs')
-      .select('id')
-      .eq('user_id', profile.id)
-      .eq('log_date', today)
-      .maybeSingle()
+      .from('step_logs').select('id')
+      .eq('user_id', profile.id).eq('log_date', today).maybeSingle()
 
-    const { data, error } = await supabase
+    const { data, error: saveError } = await supabase
       .from('step_logs')
-      .upsert(
-        {
-          user_id: profile.id,
-          circle_id: circle.id,
-          step_count: stepCount,
-          step_goal: goalCount,
-          goal_hit: goalHit,
-          xp_earned: xpEarned,
-          log_date: today,
-        },
-        { onConflict: 'user_id,log_date' }
-      )
-      .select()
-      .single()
+      .upsert({
+        user_id: profile.id,
+        circle_id: circle.id,
+        step_count: stepCount,
+        step_goal: goalCount,
+        goal_hit: goalHit,
+        xp_earned: xpEarned,
+        log_date: today,
+      }, { onConflict: 'user_id,log_date' })
+      .select().single()
 
-    if (error) {
-      setLoading(false)
-      Alert.alert('Error', error.message)
-      return
-    }
+    if (saveError) { setSaving(false); setError(saveError.message); return }
 
     if (!alreadyLogged) {
       await earn('steps', data?.id, `${stepCount.toLocaleString()} steps`)
       await completeQuestByType('steps', profile.id, circle.id, earn)
     }
-    setLoading(false)
-
-    // Alert.alert's button callbacks never fire on web, so navigating from
-    // inside one strands the user on a form they already saved. Go back directly.
+    setSaving(false)
+    // Alert.alert's button callbacks never fire on web, so navigation must not
+    // be nested inside one.
     router.back()
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Log Steps</Text>
+    <PageContainer width="form">
+      <View style={styles.head}>
+        <IconButton icon="arrow-back" onPress={() => router.back()} accessibilityLabel="Go back" />
+        <Text style={styles.title}>Log steps</Text>
+        <Chip label={`+${xpEarned} XP`} tone="gold" icon="flash" />
+      </View>
+
       {!circle && <NoCircleBanner />}
 
-      <Card style={styles.progressCard}>
-        <Text style={styles.progressLabel}>Today's Progress</Text>
-        <Text style={styles.stepCount}>{stepCount > 0 ? stepCount.toLocaleString() : '—'}</Text>
-        <Text style={styles.stepGoal}>of {goalCount.toLocaleString()} goal</Text>
-        <View style={styles.track}>
-          <View style={[styles.fill, { width: `${progress * 100}%` }, goalHit && styles.fillGoal]} />
+      <CompactCard accent={goalHit ? 'gold' : 'blue'}>
+        <View style={styles.progressHead}>
+          <View style={styles.progressCopy}>
+            <Text style={styles.eyebrow}>TODAY</Text>
+            <Text style={styles.count}>
+              {stepCount.toLocaleString()}
+              <Text style={styles.countGoal}> / {goalCount.toLocaleString()}</Text>
+            </Text>
+          </View>
+          {goalHit && <Chip label="Goal hit" tone="gold" icon="checkmark-circle" />}
         </View>
-        {goalHit && <Text style={styles.goalHitText}>Goal hit! +{XP_VALUES.STEPS_GOAL_HIT} XP</Text>}
-      </Card>
+        <ProgressBar
+          progress={progress}
+          color={goalHit ? colors.gold : colors.cornerBlue}
+          trackColor={colors.surface}
+          height={8}
+        />
+        <Text style={styles.progressNote}>
+          {stepCount === 0
+            ? 'Enter your count from your phone or watch.'
+            : goalHit
+              ? `${(stepCount - goalCount).toLocaleString()} past your goal.`
+              : `${remaining.toLocaleString()} to go.`}
+        </Text>
+      </CompactCard>
 
-      <Input
-        label="Steps Today"
-        value={steps}
-        onChangeText={setSteps}
-        keyboardType="numeric"
-        placeholder="e.g. 8500"
-      />
-      <Input
-        label="Daily Goal"
-        value={goal}
-        onChangeText={setGoal}
-        keyboardType="numeric"
-        placeholder="10000"
+      <View style={styles.fields}>
+        <NumericInput
+          label="Steps today"
+          value={steps}
+          onChangeText={setSteps}
+          placeholder="8500"
+          integer
+          step={500}
+          min={0}
+          style={styles.field}
+        />
+        <NumericInput
+          label="Daily goal"
+          value={goal}
+          onChangeText={setGoal}
+          placeholder="10000"
+          integer
+          step={1000}
+          min={1000}
+          style={styles.field}
+        />
+      </View>
+
+      {error ? (
+        <View style={styles.error} accessibilityRole="alert">
+          <Ionicons name="alert-circle" size={14} color={colors.danger} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+
+      <CompactButton
+        label={`Save steps · ${xpEarned} XP`}
+        tone="primary"
+        icon="checkmark"
+        block
+        loading={saving}
+        onPress={handleSave}
       />
 
-      <Text style={styles.xpNote}>
-        {goalHit ? `+${XP_VALUES.STEPS_GOAL_HIT} XP for hitting your goal` : `+${XP_VALUES.STEPS_LOGGED} XP for logging steps`}
+      <Text style={styles.footnote}>
+        Steps count toward Movement in the championship. Automatic syncing from your phone&apos;s
+        health data is not connected yet, so this is entered by hand for now.
       </Text>
-
-      <Button label={`Save Steps (+${xpEarned} XP)`} onPress={handleSave} loading={loading} celebrate />
-    </ScrollView>
+    </PageContainer>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  container: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 20, gap: 16, paddingBottom: 96, paddingTop: 14 },
-  title: { color: colors.text, fontFamily: type.display, fontSize: 27, fontWeight: '900', letterSpacing: 0.2, marginBottom: 4, textTransform: 'uppercase' },
-  progressCard: { alignItems: 'center', gap: 8 },
-  progressLabel: { color: colors.textMuted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.8 },
-  stepCount: { color: colors.text, fontSize: 48, fontWeight: '800' },
-  stepGoal: { color: colors.textMuted, fontSize: 14 },
-  track: { width: '100%', height: 8, backgroundColor: colors.bg, borderRadius: 4, overflow: 'hidden', marginTop: 8 },
-  fill: { height: '100%', backgroundColor: colors.primary, borderRadius: 4 },
-  fillGoal: { backgroundColor: colors.accent },
-  goalHitText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
-  xpNote: { color: colors.primary, fontSize: 14, textAlign: 'center' },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  title: { flex: 1, color: colors.text, fontFamily: type.display, fontSize: 17, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+  eyebrow: { color: colors.textMuted, fontFamily: type.display, fontSize: 9.5, fontWeight: '900', letterSpacing: 1.3 },
+  progressHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 9 },
+  progressCopy: { flex: 1, minWidth: 0 },
+  count: { color: colors.text, fontFamily: type.display, fontSize: 30, fontWeight: '900', letterSpacing: 0.3 },
+  countGoal: { color: colors.textMuted, fontSize: 15 },
+  progressNote: { color: colors.textSecondary, fontSize: 11.5, marginTop: 7 },
+  fields: { flexDirection: 'row', gap: 10 },
+  field: { flex: 1 },
+  error: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, padding: 9,
+    borderRadius: 2, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.crimsonGlow,
+  },
+  errorText: { flex: 1, color: colors.text, fontSize: 11.5 },
+  footnote: { color: colors.textMuted, fontSize: 10.5, lineHeight: 15 },
 })

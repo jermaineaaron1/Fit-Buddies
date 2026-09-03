@@ -1,23 +1,111 @@
 import React, { useState } from 'react'
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native'
-import { useRouter } from 'expo-router'
+import { View, Text, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
 import { supabase } from '../../../src/lib/supabase'
 import { useAuthStore } from '../../../src/store/authStore'
 import { useCircleStore } from '../../../src/store/circleStore'
 import { useXP } from '../../../src/hooks/useXP'
 import { completeQuestByType } from '../../../src/lib/completeQuest'
-import { Button } from '../../../src/components/ui/Button'
+import { PageContainer } from '../../../src/components/layout/PageContainer'
+import { CompactCard } from '../../../src/components/ui/CompactCard'
+import { CompactButton } from '../../../src/components/ui/CompactButton'
+import { IconButton } from '../../../src/components/ui/IconButton'
+import { SegmentedControl } from '../../../src/components/ui/SegmentedControl'
+import { Chip } from '../../../src/components/ui/Chip'
 import { NoCircleBanner } from '../../../src/components/ui/NoCircleBanner'
-import { colors, combatChip, radius, type } from '../../../src/constants/theme'
+import { AnimatedPressable } from '../../../src/components/ui/AnimatedPressable'
+import { colors, layout, radius, type } from '../../../src/constants/theme'
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i)
-const MINS = [0, 15, 30, 45]
+const MINUTES = [
+  { value: '0', label: ':00' },
+  { value: '15', label: ':15' },
+  { value: '30', label: ':30' },
+  { value: '45', label: ':45' },
+]
+const MERIDIEM = [
+  { value: 'am' as const, label: 'AM' },
+  { value: 'pm' as const, label: 'PM' },
+]
+const QUALITIES = [
+  { value: 1, label: 'Rough' },
+  { value: 2, label: 'Poor' },
+  { value: 3, label: 'OK' },
+  { value: 4, label: 'Good' },
+  { value: 5, label: 'Great' },
+]
 
-function fmt(h: number, m: number) {
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  const hh = h % 12 === 0 ? 12 : h % 12
-  return `${hh}:${m.toString().padStart(2, '0')} ${ampm}`
+type Meridiem = 'am' | 'pm'
+
+/** 12-hour display back to the 0–23 the calculation and storage use. */
+function to24(hour12: number, meridiem: Meridiem): number {
+  if (meridiem === 'am') return hour12 === 12 ? 0 : hour12
+  return hour12 === 12 ? 12 : hour12 + 12
+}
+
+/**
+ * Declared at module scope on purpose: defined inside the screen it became a
+ * new component type on every render, remounting the hour grid and both
+ * segmented controls each time any state changed.
+ */
+function TimeBlock({
+  label, hour, setHour, minute, setMinute, meridiem, setMeridiem, icon,
+}: {
+  label: string
+  hour: number
+  setHour: (value: number) => void
+  minute: number
+  setMinute: (value: number) => void
+  meridiem: Meridiem
+  setMeridiem: (value: Meridiem) => void
+  icon: keyof typeof Ionicons.glyphMap
+}) {
+  return (
+    <CompactCard>
+      <View style={styles.timeHead}>
+        <Ionicons name={icon} size={15} color={colors.cornerBlue} />
+        <Text style={styles.timeLabel}>{label}</Text>
+        <Text style={styles.timeValue}>
+          {hour}:{String(minute).padStart(2, '0')} {meridiem.toUpperCase()}
+        </Text>
+      </View>
+
+      {/* Twelve hours with an AM/PM toggle, rather than a 24-wide scroller
+          that put bedtime at the far end of a horizontal swipe. */}
+      <View style={styles.hourGrid}>
+        {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
+          <AnimatedPressable
+            key={value}
+            style={[styles.hour, hour === value && styles.hourActive]}
+            onPress={() => setHour(value)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: hour === value }}
+            accessibilityLabel={`${value} o'clock`}
+          >
+            <Text style={[styles.hourText, hour === value && styles.hourTextActive]}>{value}</Text>
+          </AnimatedPressable>
+        ))}
+      </View>
+
+      <View style={styles.timeControls}>
+        <SegmentedControl
+          segments={MINUTES}
+          value={String(minute)}
+          onChange={(value) => setMinute(Number(value))}
+          tone="blue"
+          accessibilityLabel={`${label} minutes`}
+          style={styles.minutes}
+        />
+        <SegmentedControl
+          segments={MERIDIEM}
+          value={meridiem}
+          onChange={setMeridiem}
+          tone="blue"
+          accessibilityLabel={`${label} morning or evening`}
+        />
+      </View>
+    </CompactCard>
+  )
 }
 
 export default function LogSleepScreen() {
@@ -26,188 +114,163 @@ export default function LogSleepScreen() {
   const { circle } = useCircleStore()
   const { earn } = useXP()
 
-  // Default: bedtime 10:30 PM, wake 6:30 AM
-  const [bedH, setBedH] = useState(22)
-  const [bedM, setBedM] = useState(30)
-  const [wakeH, setWakeH] = useState(6)
-  const [wakeM, setWakeM] = useState(30)
+  // Defaults: 10:30 PM to 6:30 AM.
+  const [bedHour, setBedHour] = useState(10)
+  const [bedMinute, setBedMinute] = useState(30)
+  const [bedMeridiem, setBedMeridiem] = useState<Meridiem>('pm')
+  const [wakeHour, setWakeHour] = useState(6)
+  const [wakeMinute, setWakeMinute] = useState(30)
+  const [wakeMeridiem, setWakeMeridiem] = useState<Meridiem>('am')
   const [quality, setQuality] = useState(3)
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // Compute duration
-  const bedTotal = bedH * 60 + bedM
-  let wakeTotal = wakeH * 60 + wakeM
+  const bedH = to24(bedHour, bedMeridiem)
+  const wakeH = to24(wakeHour, wakeMeridiem)
+  const bedTotal = bedH * 60 + bedMinute
+  let wakeTotal = wakeH * 60 + wakeMinute
   if (wakeTotal <= bedTotal) wakeTotal += 24 * 60
   const durationMins = wakeTotal - bedTotal
-  const durationHrs = (durationMins / 60).toFixed(1)
+  const hours = Math.floor(durationMins / 60)
+  const minutes = durationMins % 60
+  const durationHrs = durationMins / 60
+  const xpEarned = durationHrs >= 7 ? 30 : 20
 
-  function buildDatetime(h: number, m: number, isWake: boolean): string {
-    const now = new Date()
-    const d = new Date(now)
-    if (isWake) {
-      // wake time = today
-      d.setHours(h, m, 0, 0)
-    } else {
-      // bedtime = yesterday if hour >= 12 (afternoon/evening)
-      if (h >= 12) d.setDate(d.getDate() - 1)
-      d.setHours(h, m, 0, 0)
-    }
-    return d.toISOString()
+  function buildDatetime(hour24: number, minute: number, isWake: boolean): string {
+    const date = new Date()
+    // Bedtime in the afternoon or evening belongs to yesterday; waking is today.
+    if (!isWake && hour24 >= 12) date.setDate(date.getDate() - 1)
+    date.setHours(hour24, minute, 0, 0)
+    return date.toISOString()
   }
 
   async function handleSave() {
-    if (!profile?.id || !circle?.id) return
-    setLoading(true)
+    setError(null)
+    if (!profile?.id || !circle?.id) { setError('You need to be in a circle to log sleep.'); return }
+
+    setSaving(true)
     const today = new Date().toISOString().split('T')[0]
-    const xpEarned = parseFloat(durationHrs) >= 7 ? 30 : 20
 
     // Upsert on (user_id, log_date): correcting last night's times updates the
-    // existing row. XP is per-night, not per-save — without this check,
-    // re-logging would pay out again each time.
+    // existing row. XP is per-night, not per-save.
     const { data: alreadyLogged } = await supabase
-      .from('sleep_logs')
-      .select('id')
-      .eq('user_id', profile.id)
-      .eq('log_date', today)
-      .maybeSingle()
+      .from('sleep_logs').select('id')
+      .eq('user_id', profile.id).eq('log_date', today).maybeSingle()
 
-    const { data, error } = await supabase
+    const { data, error: saveError } = await supabase
       .from('sleep_logs')
       .upsert({
         user_id: profile.id,
         circle_id: circle.id,
-        bedtime: buildDatetime(bedH, bedM, false),
-        wake_time: buildDatetime(wakeH, wakeM, true),
+        bedtime: buildDatetime(bedH, bedMinute, false),
+        wake_time: buildDatetime(wakeH, wakeMinute, true),
         quality,
         xp_earned: xpEarned,
         log_date: today,
       }, { onConflict: 'user_id,log_date' })
       .select().single()
 
-    if (error) { setLoading(false); Alert.alert('Error', error.message); return }
+    if (saveError) { setSaving(false); setError(saveError.message); return }
+
     if (!alreadyLogged) {
-      await earn('sleep', data?.id, `${durationHrs}h sleep`, xpEarned)
+      await earn('sleep', data?.id, `${(durationMins / 60).toFixed(1)}h sleep`, xpEarned)
       await completeQuestByType('sleep', profile.id, circle.id, earn)
     }
-    setLoading(false)
-    // Alert.alert's button callbacks never fire on web, so navigating from
-    // inside one strands the user on a form they already saved. Go back directly.
+    setSaving(false)
+    // Alert.alert's callbacks never fire on web, so navigate directly.
     router.back()
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      <Text style={styles.title}>Log Sleep</Text>
+    <PageContainer width="form">
+      <View style={styles.head}>
+        <IconButton icon="arrow-back" onPress={() => router.back()} accessibilityLabel="Go back" />
+        <Text style={styles.title}>Log sleep</Text>
+        <Chip label={`+${xpEarned} XP`} tone="gold" icon="flash" />
+      </View>
+
       {!circle && <NoCircleBanner />}
 
-      {/* Duration display */}
-      <View style={styles.durationCard}>
-        <Ionicons name="moon" size={28} color={colors.primary} />
-        <Text style={styles.durationValue}>{durationHrs}h</Text>
-        <Text style={styles.durationLabel}>
-          {parseFloat(durationHrs) >= 8 ? 'Great night' : parseFloat(durationHrs) >= 7 ? 'Good' : 'Could be better'}
-        </Text>
-        <Text style={styles.durationXP}>+{parseFloat(durationHrs) >= 7 ? 30 : 20} XP</Text>
+      <CompactCard accent="blue">
+        <View style={styles.durationRow}>
+          <Ionicons name="moon" size={22} color={colors.cornerBlue} />
+          <View style={styles.durationCopy}>
+            <Text style={styles.duration}>{hours}h {minutes > 0 ? `${minutes}m` : ''}</Text>
+            <Text style={styles.durationNote}>
+              {durationHrs >= 8 ? 'A full night' : durationHrs >= 7 ? 'Enough to recover on' : 'Short of the 7 hours recovery needs'}
+            </Text>
+          </View>
+        </View>
+      </CompactCard>
+
+      <TimeBlock
+        label="Bedtime" icon="bed-outline"
+        hour={bedHour} setHour={setBedHour}
+        minute={bedMinute} setMinute={setBedMinute}
+        meridiem={bedMeridiem} setMeridiem={setBedMeridiem}
+      />
+      <TimeBlock
+        label="Woke up" icon="sunny-outline"
+        hour={wakeHour} setHour={setWakeHour}
+        minute={wakeMinute} setMinute={setWakeMinute}
+        meridiem={wakeMeridiem} setMeridiem={setWakeMeridiem}
+      />
+
+      <View style={styles.qualityBlock}>
+        <Text style={styles.fieldLabel}>How did you sleep?</Text>
+        <SegmentedControl
+          segments={QUALITIES.map((entry) => ({ value: String(entry.value), label: entry.label }))}
+          value={String(quality)}
+          onChange={(value) => setQuality(Number(value))}
+          tone="blue"
+          accessibilityLabel="Sleep quality"
+        />
       </View>
 
-      {/* Bedtime */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Bedtime</Text>
-        <Text style={styles.timeDisplay}>{fmt(bedH, bedM)}</Text>
-        <View style={styles.pickerRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.picker}>
-            {HOURS.map(h => (
-              <TouchableOpacity key={h} style={[styles.chip, bedH === h && styles.chipActive]} onPress={() => setBedH(h)}>
-                <Text style={[styles.chipText, bedH === h && styles.chipTextActive]}>{h.toString().padStart(2,'0')}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+      {error ? (
+        <View style={styles.error} accessibilityRole="alert">
+          <Ionicons name="alert-circle" size={14} color={colors.danger} />
+          <Text style={styles.errorText}>{error}</Text>
         </View>
-        <View style={styles.pickerRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.picker}>
-            {MINS.map(m => (
-              <TouchableOpacity key={m} style={[styles.chip, bedM === m && styles.chipActive]} onPress={() => setBedM(m)}>
-                <Text style={[styles.chipText, bedM === m && styles.chipTextActive]}>{m.toString().padStart(2,'0')}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </View>
+      ) : null}
 
-      {/* Wake time */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Wake Time</Text>
-        <Text style={styles.timeDisplay}>{fmt(wakeH, wakeM)}</Text>
-        <View style={styles.pickerRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.picker}>
-            {HOURS.map(h => (
-              <TouchableOpacity key={h} style={[styles.chip, wakeH === h && styles.chipActive]} onPress={() => setWakeH(h)}>
-                <Text style={[styles.chipText, wakeH === h && styles.chipTextActive]}>{h.toString().padStart(2,'0')}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-        <View style={styles.pickerRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.picker}>
-            {MINS.map(m => (
-              <TouchableOpacity key={m} style={[styles.chip, wakeM === m && styles.chipActive]} onPress={() => setWakeM(m)}>
-                <Text style={[styles.chipText, wakeM === m && styles.chipTextActive]}>{m.toString().padStart(2,'0')}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-
-      {/* Quality */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Sleep Quality</Text>
-        <View style={styles.qualityRow}>
-          {[1,2,3,4,5].map(q => (
-            <TouchableOpacity key={q} style={[styles.qualityBtn, quality === q && styles.qualityBtnActive]} onPress={() => setQuality(q)}>
-              <Text style={[styles.qualityText, quality === q && styles.qualityTextActive]}>
-                {['Poor','Fair','Good','Great','Perfect'][q-1]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      <Button label={`Save Sleep (+${parseFloat(durationHrs) >= 7 ? 30 : 20} XP)`} onPress={handleSave} loading={loading} celebrate />
-    </ScrollView>
+      <CompactButton
+        label={`Save sleep · ${xpEarned} XP`}
+        tone="primary"
+        icon="checkmark"
+        block
+        loading={saving}
+        onPress={handleSave}
+      />
+    </PageContainer>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  container: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 20, paddingTop: 14, gap: 20, paddingBottom: 96 },
-  title: { color: colors.text, fontFamily: type.display, fontSize: 27, fontWeight: '900', letterSpacing: 0.2, textTransform: 'uppercase' },
-
-  durationCard: {
-    backgroundColor: colors.card, borderRadius: radius.lg, padding: 24,
-    alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border,
+  head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  title: { flex: 1, color: colors.text, fontFamily: type.display, fontSize: 17, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+  durationRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  durationCopy: { flex: 1, minWidth: 0 },
+  duration: { color: colors.text, fontFamily: type.display, fontSize: 28, fontWeight: '900' },
+  durationNote: { color: colors.textSecondary, fontSize: 11.5, marginTop: 2 },
+  timeHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  timeLabel: { flex: 1, color: colors.text, fontFamily: type.display, fontSize: 12.5, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.9 },
+  timeValue: { color: colors.cornerBlue, fontFamily: type.display, fontSize: 15, fontWeight: '900' },
+  hourGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  hour: {
+    width: 44, minHeight: 34, alignItems: 'center', justifyContent: 'center',
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.cardRaised,
   },
-  durationValue: { color: colors.text, fontSize: 52, fontWeight: '800' },
-  durationLabel: { color: colors.textMuted, fontSize: 14 },
-  durationXP: { color: colors.primary, fontSize: 14, fontWeight: '700', marginTop: 4 },
-
-  section: { gap: 10 },
-  label: { color: colors.textSecondary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
-  timeDisplay: { color: colors.text, fontSize: 28, fontWeight: '700' },
-
-  pickerRow: { height: 44 },
-  picker: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 2 },
-  chip: combatChip.base,
-  chipActive: { ...combatChip.active, backgroundColor: colors.primary },
-  chipText: { ...combatChip.text, fontSize: 15 },
-  chipTextActive: combatChip.textActive,
-
-  qualityRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  qualityBtn: {
-    paddingHorizontal: 14, paddingVertical: 9,
-    borderRadius: radius.sm, backgroundColor: colors.card,
-    borderWidth: 1, borderColor: colors.border,
+  hourActive: { borderColor: colors.cornerBlue, backgroundColor: colors.cornerBlue },
+  hourText: { color: colors.textSecondary, fontFamily: type.display, fontSize: 14, fontWeight: '800' },
+  hourTextActive: { color: '#FFFFFF' },
+  timeControls: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
+  minutes: { flex: 1, minWidth: 168 },
+  qualityBlock: { gap: 6 },
+  fieldLabel: { color: colors.textMuted, fontFamily: type.display, fontSize: 9.5, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.9 },
+  error: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, padding: 9,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.crimsonGlow,
   },
-  qualityBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  qualityText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  qualityTextActive: { color: '#fff' },
+  errorText: { flex: 1, color: colors.text, fontSize: 11.5 },
 })
