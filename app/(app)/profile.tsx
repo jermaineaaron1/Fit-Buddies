@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native'
+import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
 import { useAuthStore } from '../../src/store/authStore'
 import { useCircleStore } from '../../src/store/circleStore'
@@ -56,6 +57,12 @@ export default function ProfileScreen() {
 
   if (!profile) return null
 
+  // Honours the AI likeness when that is what the member chose, matching how
+  // every other surface resolves an avatar.
+  const avatarUrl = profile.avatar_source === 'ai'
+    ? profile.ai_avatar_url ?? profile.avatar_url ?? null
+    : profile.avatar_url ?? null
+
   const stats = [
     { label: 'Total XP', value: totalXP.toLocaleString(), icon: 'flash-outline' },
     { label: 'Weekly XP', value: weeklyXP.toLocaleString(), icon: 'calendar-outline' },
@@ -69,7 +76,9 @@ export default function ProfileScreen() {
       {/* Avatar */}
       <View style={styles.avatarSection}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{profile.display_name.charAt(0).toUpperCase()}</Text>
+          {avatarUrl
+            ? <Image source={{ uri: avatarUrl }} style={styles.avatarImage} contentFit="cover" />
+            : <Text style={styles.avatarText}>{profile.display_name.charAt(0).toUpperCase()}</Text>}
         </View>
         <Text style={styles.displayName}>{profile.display_name}</Text>
         <Text style={styles.username}>@{profile.username}</Text>
@@ -187,7 +196,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   container: { width: '100%', maxWidth: 900, alignSelf: 'center', padding: 20, gap: 20, paddingBottom: 96, paddingTop: 14 },
   avatarSection: { alignItems: 'center', gap: 8, paddingTop: 20 },
+  avatarImage: { width: '100%', height: '100%' },
   avatar: {
+    overflow: 'hidden',
     width: 80,
     height: 80,
     borderRadius: 40,

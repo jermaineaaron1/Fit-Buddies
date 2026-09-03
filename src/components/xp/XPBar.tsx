@@ -11,7 +11,7 @@ interface XPBarProps {
 }
 
 export function XPBar({ totalXP, level, weeklyXP }: XPBarProps) {
-  const { current, next, progress } = getXPToNextLevel(totalXP)
+  const { current, next, progress, isMax } = getXPToNextLevel(totalXP)
   const label = getLevelLabel(level)
 
   return (
@@ -22,13 +22,18 @@ export function XPBar({ totalXP, level, weeklyXP }: XPBarProps) {
           <Text style={styles.weekly}>{weeklyXP} XP this week</Text>
         </View>
         <View style={styles.xpPill}>
-          <Text style={styles.xpText}>{current}<Text style={styles.xpMax}> / {next}</Text></Text>
+          <Text style={styles.xpText}>
+            {current.toLocaleString()}
+            {isMax ? <Text style={styles.xpMax}> XP</Text> : <Text style={styles.xpMax}> / {next.toLocaleString()}</Text>}
+          </Text>
         </View>
       </View>
       <ProgressBar progress={Math.max(progress, 0.02)} color={colors.primary} trackColor={colors.surface} height={6} />
       <View style={styles.labels}>
-        <Text style={styles.labelText}>{current} XP earned</Text>
-        <Text style={styles.labelText}>{next - current} XP to next level</Text>
+        <Text style={styles.labelText}>{current.toLocaleString()} XP earned</Text>
+        <Text style={styles.labelText}>
+          {isMax ? 'Top level reached' : `${(next - current).toLocaleString()} XP to next level`}
+        </Text>
       </View>
     </View>
   )

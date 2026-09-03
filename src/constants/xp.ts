@@ -39,13 +39,20 @@ export function getLevelLabel(level: number): string {
   return LEVEL_THRESHOLDS.find(t => t.level === level)?.label ?? 'Rookie'
 }
 
-export function getXPToNextLevel(totalXP: number): { current: number; next: number; progress: number } {
+export function getXPToNextLevel(
+  totalXP: number,
+): { current: number; next: number; progress: number; isMax: boolean } {
   const level = getLevelFromXP(totalXP)
   const currentThreshold = LEVEL_THRESHOLDS.find(t => t.level === level)!
   const nextThreshold = LEVEL_THRESHOLDS.find(t => t.level === level + 1)
 
+  // At the top level there is no next threshold. This used to report
+  // `next: currentThreshold.min`, which callers then subtracted from `current`
+  // and rendered as a negative "XP to next level" for anyone who maxed out.
+  // `isMax` lets them say so instead of doing arithmetic on a number that does
+  // not mean what its name suggests.
   if (!nextThreshold) {
-    return { current: totalXP, next: currentThreshold.min, progress: 1 }
+    return { current: totalXP, next: totalXP, progress: 1, isMax: true }
   }
 
   const range = nextThreshold.min - currentThreshold.min
@@ -54,6 +61,7 @@ export function getXPToNextLevel(totalXP: number): { current: number; next: numb
     current: earned,
     next: range,
     progress: Math.min(earned / range, 1),
+    isMax: false,
   }
 }
 

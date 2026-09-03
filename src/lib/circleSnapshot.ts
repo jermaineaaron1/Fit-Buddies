@@ -60,6 +60,58 @@ export interface CircleSnapshot {
   inviteCode: string | null
 }
 
+/**
+ * The circle's ranking rule, in one place.
+ *
+ * Members with an established baseline rank by improvement against their own
+ * starting point; members still establishing one sort after them by raw weekly
+ * points. This is the fairness position of the whole product, so every screen
+ * that ranks people has to use exactly this — Versus previously sorted by raw
+ * weekly XP to decide which title format you qualified for, which rewarded
+ * whoever logged most in absolute terms and contradicted every other board.
+ */
+export function compareContenders(
+  a: { improvement_pct: number | null; weekly_xp: number },
+  b: { improvement_pct: number | null; weekly_xp: number },
+): number {
+  if (a.improvement_pct !== null && b.improvement_pct !== null) return b.improvement_pct - a.improvement_pct
+  if (a.improvement_pct !== null) return -1
+  if (b.improvement_pct !== null) return 1
+  return b.weekly_xp - a.weekly_xp
+}
+
+/**
+ * Just the ranks, in one query, for screens that need a standing but not the
+ * whole board. Baseline establishment is deliberately left to the Main Event:
+ * writing it from here would fire on a screen the member may never open.
+ */
+export async function loadContenderRanks(
+  circleId: string,
+): Promise<{ ranks: Map<string, number>; total: number }> {
+  const { data } = await supabase
+    .from('circle_members')
+    .select('user_id, profiles(weekly_xp, baseline_weekly_xp)')
+    .eq('circle_id', circleId)
+
+  const rows = ((data as any[]) ?? []).map((member) => {
+    const weeklyXp = member.profiles?.weekly_xp ?? 0
+    const baseline = member.profiles?.baseline_weekly_xp
+    return {
+      user_id: member.user_id as string,
+      weekly_xp: weeklyXp,
+      // Mirrors the guard in the full snapshot: a percentage change from a
+      // zero baseline is undefined, not enormous.
+      improvement_pct: baseline == null || baseline <= 0 ? null : (weeklyXp - baseline) / baseline,
+    }
+  })
+
+  rows.sort(compareContenders)
+  return {
+    ranks: new Map(rows.map((row, index) => [row.user_id, index + 1])),
+    total: rows.length,
+  }
+}
+
 const BASELINE_ELIGIBLE_MS = 7 * 86400000
 
 export const EMPTY_SNAPSHOT: CircleSnapshot = {
@@ -232,12 +284,7 @@ export async function loadCircleSnapshot(circleId: string, selfId: string | null
         sleep_hours: sleepMap[member.user_id] ?? null,
       }
     })
-    .sort((a, b) => {
-      if (a.improvement_pct !== null && b.improvement_pct !== null) return b.improvement_pct - a.improvement_pct
-      if (a.improvement_pct !== null) return -1
-      if (b.improvement_pct !== null) return 1
-      return b.weekly_xp - a.weekly_xp
-    })
+    .sort(compareContenders)
     .map((entry, index) => ({ ...entry, rank: index + 1 }))
 
   const nameById = new Map(memberData.map((member: any) => [member.user_id, member.profiles?.display_name ?? 'Contender']))

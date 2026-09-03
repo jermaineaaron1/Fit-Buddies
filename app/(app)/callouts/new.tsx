@@ -7,6 +7,7 @@ import { useCircleStore } from '../../../src/store/circleStore'
 import { supabase } from '../../../src/lib/supabase'
 import { colors, combatChip, radius, type } from '../../../src/constants/theme'
 import { getCalloutFormatForRank, type CalloutFormatInfo } from '../../../src/lib/callouts'
+import { compareContenders } from '../../../src/lib/circleSnapshot'
 import { notifyCircle } from '../../../src/lib/push'
 import { Button } from '../../../src/components/ui/Button'
 import { Input } from '../../../src/components/ui/Input'
@@ -49,15 +50,30 @@ export default function NewCalloutScreen() {
       if (!circle?.id || !profile?.id) return
       const { data: memberProfiles } = await supabase
         .from('circle_members')
-        .select('user_id, profiles(display_name, weekly_xp)')
+        .select('user_id, profiles(display_name, weekly_xp, baseline_weekly_xp)')
         .eq('circle_id', circle.id)
       if (!memberProfiles) return
 
+      // Ranked by improvement against each member's own baseline — the same
+      // rule the standings and The Belt use. Sorting on raw weekly XP here
+      // handed the easiest title format to whoever simply logged the most,
+      // and this screen is where the format and the eligible opponent pool
+      // are actually decided.
       const ranked: PoolMember[] = [...memberProfiles]
-        .sort((a: any, b: any) => (b.profiles?.weekly_xp ?? 0) - (a.profiles?.weekly_xp ?? 0))
-        .map((m: any, i) => ({ user_id: m.user_id, display_name: m.profiles?.display_name ?? 'Unknown', rank: i + 1 }))
+        .map((member: any) => {
+          const weeklyXp = member.profiles?.weekly_xp ?? 0
+          const baseline = member.profiles?.baseline_weekly_xp
+          return {
+            user_id: member.user_id as string,
+            display_name: member.profiles?.display_name ?? 'Unknown',
+            weekly_xp: weeklyXp,
+            improvement_pct: baseline == null || baseline <= 0 ? null : (weeklyXp - baseline) / baseline,
+          }
+        })
+        .sort(compareContenders)
+        .map((member, index) => ({ user_id: member.user_id, display_name: member.display_name, rank: index + 1 }))
 
-      const myEntry = ranked.find(m => m.user_id === profile.id)
+      const myEntry = ranked.find((member) => member.user_id === profile.id)
       setMyRank(myEntry?.rank ?? ranked.length)
       setPool(ranked)
     }
