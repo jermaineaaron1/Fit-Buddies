@@ -48,7 +48,13 @@ export function ExerciseLogCard({
   exercise, index, total, userId, recentNames, onChange, onRemove, onMove, onOpenLibrary,
 }: ExerciseLogCardProps) {
   const schema = schemaFor(exercise.measurement_type)
-  const [activeSet, setActiveSet] = useState(0)
+  // Resume where the session actually is. Defaulting to 0 left a finished
+  // first set open for editing while the set about to be performed sat
+  // collapsed below it — backwards for anyone reopening a part-done exercise.
+  const [activeSet, setActiveSet] = useState(() => {
+    const next = exercise.setRows.findIndex((set) => !set.completed)
+    return next === -1 ? Math.max(0, exercise.setRows.length - 1) : next
+  })
   const [previous, setPrevious] = useState<PreviousPerformance | null>(null)
   const [notesOpen, setNotesOpen] = useState(false)
   const showWeightMode = exercise.measurement_type === 'strength' || exercise.measurement_type === 'bodyweight'
@@ -291,7 +297,8 @@ const styles = StyleSheet.create({
   headActions: { flexDirection: 'row', gap: 4 },
   metaRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   metaField: { flex: 1, minWidth: 150 },
-  weightMode: { alignSelf: 'flex-start' },
+  // Full width: shrink-to-fit clipped 'Assisted' to 'ASSIS…'.
+  weightMode: { alignSelf: 'stretch' },
   deviceNote: {
     flexDirection: 'row', gap: 7, padding: 9, borderRadius: radius.sm,
     borderWidth: 1, borderColor: colors.cornerBlue + '55', backgroundColor: colors.cornerBlue + '12',

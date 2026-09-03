@@ -32,6 +32,12 @@ export interface FieldSpec {
 export interface MeasurementSchema {
   type: MeasurementType
   label: string
+  /**
+   * Fits the collapsed picker, which shares a row with the equipment field.
+   * "Distance cardio" clipped to "DISTANCE CA…" there while reading fine in
+   * the expanded list, where `label` is used instead.
+   */
+  shortLabel: string
   /** One line describing what this schema is for, shown when picking it. */
   blurb: string
   icon: keyof typeof Ionicons.glyphMap
@@ -67,6 +73,7 @@ export const MEASUREMENT_SCHEMAS: Record<MeasurementType, MeasurementSchema> = {
   strength: {
     type: 'strength',
     label: 'Strength',
+    shortLabel: 'Strength',
     blurb: 'External load for reps — barbell, dumbbell, machine.',
     icon: 'barbell',
     unitNoun: 'set',
@@ -82,6 +89,7 @@ export const MEASUREMENT_SCHEMAS: Record<MeasurementType, MeasurementSchema> = {
   bodyweight: {
     type: 'bodyweight',
     label: 'Bodyweight',
+    shortLabel: 'Bodyweight',
     blurb: 'Pull-ups, dips, push-ups — with added weight or machine assistance.',
     icon: 'body',
     unitNoun: 'set',
@@ -99,6 +107,7 @@ export const MEASUREMENT_SCHEMAS: Record<MeasurementType, MeasurementSchema> = {
   isometric: {
     type: 'isometric',
     label: 'Isometric hold',
+    shortLabel: 'Isometric',
     blurb: 'Planks, wall sits, static holds — measured by time, not reps.',
     icon: 'hourglass',
     unitNoun: 'hold',
@@ -114,6 +123,7 @@ export const MEASUREMENT_SCHEMAS: Record<MeasurementType, MeasurementSchema> = {
   isometric_force: {
     type: 'isometric_force',
     label: 'Force-measured hold',
+    shortLabel: 'Force hold',
     blurb: 'Isometric against a dynamometer or force plate. Device required.',
     icon: 'speedometer',
     unitNoun: 'effort',
@@ -130,6 +140,7 @@ export const MEASUREMENT_SCHEMAS: Record<MeasurementType, MeasurementSchema> = {
   distance_cardio: {
     type: 'distance_cardio',
     label: 'Distance cardio',
+    shortLabel: 'Distance',
     blurb: 'Running, cycling, rowing, swimming — distance over time.',
     icon: 'walk',
     unitNoun: 'effort',
@@ -145,6 +156,7 @@ export const MEASUREMENT_SCHEMAS: Record<MeasurementType, MeasurementSchema> = {
   intervals: {
     type: 'intervals',
     label: 'Intervals',
+    shortLabel: 'Intervals',
     blurb: 'Work and recovery repeated for rounds — HIIT, sprints, circuits.',
     icon: 'timer',
     unitNoun: 'block',
@@ -168,6 +180,7 @@ export const MEASUREMENT_SCHEMAS: Record<MeasurementType, MeasurementSchema> = {
   mobility: {
     type: 'mobility',
     label: 'Mobility',
+    shortLabel: 'Mobility',
     blurb: 'Stretching and joint work — time held and how it felt.',
     icon: 'accessibility',
     unitNoun: 'movement',

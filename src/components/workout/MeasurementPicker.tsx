@@ -33,7 +33,7 @@ export function MeasurementPicker({ value, onChange, disabled = false }: Measure
         accessibilityLabel={`Measured as ${current.label}. Change`}
       >
         <Ionicons name={current.icon} size={15} color={colors.gold} />
-        <Text style={styles.triggerText} numberOfLines={1}>{current.label}</Text>
+        <Text style={styles.triggerText} numberOfLines={1}>{current.shortLabel}</Text>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
       </AnimatedPressable>
 
