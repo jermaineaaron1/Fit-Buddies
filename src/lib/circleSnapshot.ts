@@ -189,9 +189,14 @@ export async function loadCircleSnapshot(circleId: string, selfId: string | null
   // next visit.
   const newlyBaselined: Record<string, number> = {}
   const self = memberData.find((member: any) => member.user_id === selfId)
+  // A baseline of zero is not a baseline — it means the member happened to log
+  // nothing that week. Left alone it would strand them on "building baseline"
+  // forever, so it is treated as unset and captured again from a week they
+  // were actually active.
   if (
     self
-    && self.profiles?.baseline_weekly_xp == null
+    && (self.profiles?.baseline_weekly_xp == null || Number(self.profiles.baseline_weekly_xp) <= 0)
+    && (self.profiles?.weekly_xp ?? 0) > 0
     && Date.now() - new Date(self.joined_at).getTime() >= BASELINE_ELIGIBLE_MS
   ) {
     const baseline = self.profiles?.weekly_xp ?? 0
@@ -212,7 +217,14 @@ export async function loadCircleSnapshot(circleId: string, selfId: string | null
         current_streak: member.profiles?.current_streak ?? 0,
         rank: 0,
         badge: badgeMap[member.user_id] ?? null,
-        improvement_pct: baseline == null ? null : (weeklyXp - baseline) / Math.max(baseline, 1),
+        // A percentage change from a zero baseline is undefined, not enormous.
+        // The old Math.max(baseline, 1) turned "you logged nothing during your
+        // baseline week" into +18000%, which reads as broken and would have
+        // parked that member at the top of the standings permanently — the
+        // precise unfairness this ranking exists to avoid.
+        improvement_pct: baseline == null || baseline <= 0
+          ? null
+          : (weeklyXp - baseline) / baseline,
         avatar_url: avatarFor(member.profiles),
         workout_done: workoutSet.has(member.user_id),
         meal_count: mealMap[member.user_id] ?? 0,
