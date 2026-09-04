@@ -66,7 +66,7 @@ export async function analyseMealPhoto(
       recentFoods,
     },
   })
-  if (error) return { ok: false, error: describeInvokeError(error, 'Photo scanning') }
+  if (error) return { ok: false, error: await describeInvokeError(error, 'Photo scanning') }
   if (data?.error) return { ok: false, error: String(data.error) }
 
   const items = ((data?.items ?? []) as EstimatedItem[]).map(groundAgainstKnownFoods)
